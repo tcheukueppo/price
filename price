@@ -1,0 +1,84 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use feature qw(say);
+
+use Mojo::DOM;
+
+
+use Inline Python => <<'END';
+import requests
+
+from ima.search import Search
+from ima.utils  import generate_headers
+
+def fetch_pages(query):
+   links = []
+   s     = Search()
+
+   s.set_query(query)
+   for engine in ['google', 'duckduckgo']:
+      s.set_engine(engine)
+      try:
+         links = s.next()
+         break
+      except:
+         continue
+   if not len(links):
+      return None
+
+   pages = []
+   for link in links:
+      try:
+         response = requests.get(link, headers = generate_headers())
+         if response.status_code == requests.codes.ok:
+            pages.append(response.text)
+      except:
+         continue
+   return pages if len(pages) else None
+END
+
+my $PRICE_RE = qr/
+   (?<i> (?&FLOAT) ) (?<u> (?&UNITS) )?
+   (?&PAD) (?<r> (?&RANGE) ) (?&PAD)
+   (?(<r>)
+      (?<ii> (?&FLOAT) )?
+      (?(<ii>)
+         (?<u> (?&UNITS) )?
+      )
+   )
+   (?(DEFINE)
+      (?<FLOAT> \d+ (?: [.,] \d+ )? )
+      (?<PAD> \s* )
+      (?<RANGE> [-] )
+
+      (?<DOLLAR> $ | &dollar; | (?i: dollar(?:s)? ) )
+      (?<EURO> € | &euro; | (?i: euro(?:s)? ) )
+      # define units here
+
+      (?<UNITS>
+           (?&DOLLAR) 
+         | (?&EURO)
+         # more units
+      )
+   )
+/x;
+
+@ARGV != 1 && die <<"HELP";
+Usage: $0 ARTICLE_NAME 
+   ARTICLE_NAME: the name of the article you wish to know the price
+HELP
+
+my $dom   = Mojo::DOM->new();
+my @pages = fetch_pages($ARGV[0]);
+
+if (@pages) {
+   foreach my $page (@pages) {
+      my $text = $dom->parse($page);
+      # ...
+   }
+}
+else {
+   die "$0: ERROR: could not fetch pages\n";
+}
