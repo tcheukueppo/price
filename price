@@ -10,10 +10,10 @@ use Mojo::UserAgent;
 
 use Data::Dumper;
 
-my $MAX_INTER             = 2;
-my $MAX_INTER_LENGTH      = 1;
+my $MAX_INTER            = 2;
+my $MAX_INTER_LENGTH     = 1;
 my $MAX_INNER_WORD_COUNT = 1;
-my $MAX_OCCURENCE_PERC    = 90;
+my $MAX_OCCURENCE_PERC   = 90;
 
 my $PRICE_RE = qr/
    (?<i> (?&FLOAT) ) (?<u> (?&UNITS) )?
@@ -42,46 +42,68 @@ my $PRICE_RE = qr/
 /x;
 
 sub generate_article_regex {
-   my $article = shift;
-   my @token_re;
+    my $article       = shift;
+    my $capture_index = -1;
+    my @token_re;
 
-   foreach my $token (split m/\s+/, $article) {
-      my $re = q{ (?<=\s) ( };
+    foreach my $token ( split m/\s+/, $article ) {
+        my $token_re = ' (?<=\s) ( ';
 
-      if (length $token > 1) {
-         $re .= join ' ', map "(?<c>$_)? (?<i>.*?)", (split '', $token)[0..length($token) - 2];
-         $re .= q{ (?<c>} . chop($token) . q{)?};
-      }
-      else {
-         $re .= "(?<c>$token)";
-      }
-      push @token_re, qr/$re (?=\s) ) /x
-   }
+        $capture_index++;
+        if ( length $token > 1 ) {
+            $token_re .= join ' ',
+                map "(?<c_${capture_index}>$_)? (?<i_${capture_index}>.*?)",
+                ( split '', $token )[ 0 .. length( $token ) - 2 ];
+            $token_re .= " (?<c_${capture_index}>" . chop( $token ) . ')?';
+        }
+        else {
+            $token_re .= "(?<c_${capture_index}>$token)";
+        }
 
-   return join ' (?<words>.*?) ', @token_re
+        push @token_re, qr/ $token_re ) (?=\s) /x;
+    }
+
+    return {
+        max_capture_index => $capture_index,
+        regex             => '(' . join( ' (?<words>.*?) ', @token_re ) . ')'
+    };
 }
 
 sub apply_edit_distance {
-   my ( $token_re, $article, $tags_content ) = @_;
+    my ( $token_re, $article, $tags_content ) = @_;
+    my ( $nwords, $total_i, $total_c );
+    my @target_article;
 
-   while ( $tags_content =~ m/$token_re/gso ) {
+    while ( $tags_content =~ m/$token_re->{regex}/gso ) {
+        ( $nwords, $total_i, $total_c ) = ();
 
-      foreach my $inner_words ( grep { defined } $+{words}->@* ) {
-         next 2 if ($inner_words =~ m/(?<=\s{0,1})(\S+)(?=\s{0,1})/g) > $MAX_INNER_WORD_COUNT;
-      }
+        foreach my $inner_words ( grep { defined } $-{words}->@* ) {
+            $nwords = () = $inner_words =~ m/ (?<=\s{0,1}) (\S+) (?=\s{0,1}) /gx;
+            if ( $nwords > $MAX_INNER_WORD_COUNT ) {
+               # pos
+               next 2;
+            }
+        }
 
-      if ( ( $+{c}->@* / length $article ) * 100 < $MAX_OCCURENCE_PERC )
-      || ( grep { defined } $+{i}->@* > $MAX_INTER )
-      || ( grep { defined && length > $MAX_INTER_LENGTH } $+{i}->@* ) {
-         next
-      }
+        my $i = $-{ 'i_' . $token_re->{max_capture_index} } // [];
+        my $c = $-{ 'c_' . $token_re->{max_capture_index} } // [];
 
-      push @target_article, [
-         $1,               # article name we got
-         scalar $+{i}->@*, # unknown chars
-         scalar $+{c}->@*, # known
-      ]
-   }
+        if (   ( ( @$c / length $article ) * 100 < $MAX_OCCURENCE_PERC )
+            || ( grep { defined } @$i > $MAX_INTER )
+            || ( grep { defined && length > $MAX_INTER_LENGTH } @$i ) ) {
+            # pos
+            next;
+        }
 
-   return ( sort { } @target_article )[0][0];
+        $total_i += @$i;
+        $total_c += @$c;
+
+        push @target_article, [ $1, $total_i, $total_c, $nwords ];
+
+        last if --$token_re->{max_capture_index} == -1;
+    }
+
+    return ( sort { $a->[ 3 ] <=> $b->[ 3 ] || $a->[ 2 ] <=> $b->[ 2 ] || $a->[ 1 ] <=> $b->[ 1 ] } @target_article )[ @target_article ][ 0 ];
 }
+
+say Dumper generate_article_regex( 'I love perl' );
