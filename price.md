@@ -32,15 +32,16 @@ To avoid unintercipated inequalities between case folded substring, we decompose
 substrings based on compatibility equivalence to obtain their ascii equivalent.
 
 We also have to note the number of characters uncommon between strings that were needed to be decomposed
-inorder for their comparison to return a true value.
+inorder for their comparison to return a truth value.
 
 #### EDIT DISTANCE
 
-Use edit distance algorithm detect substrings ressemblance.
+Use edit distance algorithm detect substrings ressemblance. Set a maximun number of operations need to
+be performed to equalize them and discards substrings that goes over it.
 
 #### MEASURE PRECISION OF THE EXTRACTED ARTICLE MATCHED BY THE ARTICLE REGEX
 
-The precision of the extracted article's name is measured by the edit distance, the how many unicode characters
+The precision of the extracted name is measured by the edit distance, the how many unicode characters
 were canonically decomposed to equate substrings and finally how far apart substrings in the requested articles
 name are are in the extracted string.
 
