@@ -70,7 +70,7 @@ sub generate_article_regex {
 }
 
 sub apply_edit_distance {
-    my ( $token_re, $article, $tags_content ) = @_;
+    my ( $token_re, $article, $tags_content, $config ) = @_;
     my ( $nwords, $total_i, $total_c );
     my @target_article;
 
@@ -79,28 +79,29 @@ sub apply_edit_distance {
 
         foreach my $inner_words ( grep { defined } $-{words}->@* ) {
             $nwords = () = $inner_words =~ m/ (?<=\s{0,1}) (\S+) (?=\s{0,1}) /gx;
-            if ( $nwords > $MAX_INNER_WORD_COUNT ) {
-               # pos
+            if ( $nwords > $config{MAX_WORD_COUNT_BETWEEN} ) {
+               pos $token_re->{regex} = #val;
                next 2;
             }
         }
 
-        my $i = $-{ 'i_' . $token_re->{max_capture_index} } // [];
-        my $c = $-{ 'c_' . $token_re->{max_capture_index} } // [];
 
-        if (   ( ( @$c / length $article ) * 100 < $MAX_OCCURENCE_PERC )
-            || ( grep { defined } @$i > $MAX_INTER )
-            || ( grep { defined && length > $MAX_INTER_LENGTH } @$i ) ) {
-            # pos
-            next;
+        foreach my $cap_index ( 1 .. $token_re->{max_capture_index} ) {
+           my $i = $-{ 'i_' . $token_re->{max_capture_index} } // [];
+           my $c = $-{ 'c_' . $token_re->{max_capture_index} } // [];
+
+           # Avoid a single token 
+           if (   ( ( @$c / length $article ) * 100 < $config{MAX_OCCURENCE_PERC} )
+               || ( grep { defined } @$i > $MAX_INTER )
+               || ( grep { defined && length > $config{MAX_INTER_LENGTH} } @$i ) ) {
+               pos $token_re->{regex} = #val;
+               next 2;
+           }
+           $total_i += @$i;
+           $total_c += @$c;
         }
 
-        $total_i += @$i;
-        $total_c += @$c;
-
         push @target_article, [ $1, $total_i, $total_c, $nwords ];
-
-        last if --$token_re->{max_capture_index} == -1;
     }
 
     return ( sort { $a->[ 3 ] <=> $b->[ 3 ] || $a->[ 2 ] <=> $b->[ 2 ] || $a->[ 1 ] <=> $b->[ 1 ] } @target_article )[ @target_article ][ 0 ];
