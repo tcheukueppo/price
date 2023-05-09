@@ -42,33 +42,31 @@ my $PRICE_RE = qr/
 /x;
 
 sub generate_article_regex {
-    my $article       = shift;
+    my $article = shift;
     my @token_re;
-    my ( $capture_index, $ntokens ) = ( -1, 0 );
+    my ( $capture_index, $n_tokens ) = ( -1, 0 );
 
-    foreach my $token ( split m/\s+/, $article ) {
-        my $token_re = ' (?<=\s) ( ';
+    foreach my $token ( grep { length } split m/\s+/, $article ) {
+        my $token_re = ' (?<=\s) ';
 
-        $capture_index++;
         if ( length $token > 1 ) {
             $token_re .= join ' ',
-                map "(?<c_${capture_index}>$_)? (?<i_${capture_index}>.*?)",
-                ( split '', $token )[ 0 .. length( $token ) - 2 ];
-            $token_re .= " (?<c_${capture_index}>" . chop( $token ) . ')?';
+                map "(?<c_$n_tokens>$_)? (?<i_$n_tokens>.*?)", ( split '', $token )[ 0 .. length( $token ) - 2 ];
+            $token_re .= " (?<c_$n_tokens>" . chop( $token ) . ')?';
         }
         else {
-            $token_re .= "(?<c_${capture_index}>$token)";
+            $token_re .= "(?<c_$n_tokens>$token)";
         }
 
-        $ntokens++;
-        push @token_re, qr/ $token_re ) (?=\s) /x;
+        push @token_re, $token_re . ' (?=\s) ';
+        $n_tokens++;
     }
 
+    my $article_regex = '(?:\s+) (' . join( ' (?<words>.*?) ', @token_re ) . ') (?:\s+)';
     return {
-        number_tokens     => $ntokens,
-        max_capture_index => $capture_index,
-        regex             => '(?:\s+) (' . join( ' (?<words>.*?) ', @token_re ) . ') (?:\s+)'
-    };
+        number_tokens => $n_tokens,
+        regex => qr/$article_regex/x,
+     };
 }
 
 sub apply_edit_distance {
@@ -76,12 +74,12 @@ sub apply_edit_distance {
     my @target_article;
 
     while ( $tags_content =~ m/$token_re->{regex}/gso ) {
-        my $nwords = 0
+        my $nwords = 0;
 
         foreach my $inner_words ( grep { defined } $-{words}->@* ) {
             $nwords = () = $inner_words =~ m/ (?<=\s{0,1}) (\S+) (?=\s{0,1}) /gx;
 
-            if ( $nwords > $config{MAX_WORD_COUNT_BETWEEN} ) {
+            if ( $nwords > $config->{MAX_WORD_COUNT_BETWEEN} ) {
                if ( pos( $token_re->{regex}) != length $tags_content ) {
                   pos $token_re->{regex} = $+[1] + 1;
                }
@@ -92,22 +90,22 @@ sub apply_edit_distance {
         my $valid_tokens = 0;
         my ( $total_i, $total_c ) = ();
 
-        foreach my $cap_index ( 1 .. $token_re->{max_capture_index} ) {
-           my $i = $-{ 'i_' . $token_re->{max_capture_index} } // [];
-           my $c = $-{ 'c_' . $token_re->{max_capture_index} } // [];
+        foreach my $cap_index ( 1 .. $token_re->{number_tokens} ) {
+           my $i = $-{ 'i_' . $cap_index } // [];
+           my $c = $-{ 'c_' . $cap_index } // [];
 
            $total_i += @$i;
            $total_c += @$c;
-           if (   ( ( @$c / length $article ) * 100 < $config{MAX_OCCURENCE_PERC} )
+           if (   ( ( @$c / length $article ) * 100 < $config->{MAX_OCCURENCE_PERC} )
                || ( grep { defined } @$i > $MAX_INTER )
-               || ( grep { defined && length > $config{MAX_INTER_LENGTH} } @$i ) ) {
+               || ( grep { defined && length > $config->{MAX_INTER_LENGTH} } @$i ) ) {
               next
            }
            $valid_tokens++;
         }
 
         # Avoid this if a good percentage of tokens are valid
-        if ( ( $valid_tokens / $token_re->{number_tokens} ) * 100 < $config{VALID_TOKEN_PERC} ) {
+        if ( ( $valid_tokens / $token_re->{number_tokens} ) * 100 < $config->{VALID_TOKEN_PERC} ) {
             if ( pos( $token_re->{regex}) != length $tags_content ) {
                pos $token_re->{regex} = $+[1] + 1;
             }
@@ -127,5 +125,3 @@ sub apply_edit_distance {
        } @target_article
     ) [ @target_article ][ 0 ];
 }
-
-say Dumper generate_article_regex( 'I love perl' );
