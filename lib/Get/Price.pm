@@ -2,16 +2,20 @@ package Get::Price;
 
 use strict;
 use warnings;
-use feature qw(say);
+use feature qw(say state);
 
 use Getopt::Long;
 use Data::Dumper;
 
-my $MAX_INTER            = 2;
-my $MAX_INTER_LENGTH     = 1;
-my $MAX_INNER_WORD_COUNT = 1;
-my $MAX_OCCURENCE_PERC   = 90;
+# Configuration search precision
+my %CONFIGS = {
+   MAX_INTER            => 2,
+   MAX_INTER_LENGTH     => 1,
+   MAX_INNER_WORD_COUNT => 1,
+   MAX_OCCURENCE_PERC   => 90,
+};
 
+# regex for matching prices in different units
 my $PRICE_RE = qr/
    (?<i> (?&FLOAT) ) (?<u> (?&UNITS) )?
    (?&PAD) (?<r> (?&RANGE) ) (?&PAD)
@@ -39,42 +43,63 @@ my $PRICE_RE = qr/
 /x;
 
 sub new {
-   my $class = shift;
-   my $text  = shift;
+   my $self = shift;
+   my ( $contents, $article, %configs ) = @_;
 
-   bless $text, $class;
+   foreach $key (keys %configs) {
+      exists $CONFIGS{$key} || croak "unknown configuration '$configs' => $configs{$key}";
+      $CONFIGS{$key} = $configs{$key};
+   }
+
+   bless {
+      contents => $contents,
+      article  => { name => $article, },
+   }, $self;
+
+   return $self->generate_article_regex();
+}
+
+sub generate_perms {
+   my ( $self, @token_regexs ) = @_;
+   state ( $perms, @stack );
+
+   if ( @token_regexs ) {
+      foreach my $index (0..$#token_regexs) {
+         push @stack, $token_regexs[$index];
+         $self->generate_perms(grep { $token_regexs[$index] eq $_ } @token_regexs);
+         pop @stack;
+      }
+   }
+   else {
+      my $shuffled_article;
+
+      $stack[0] = "(?<fw> $stack[0] )" if @stack > 1;
+      $shuffled_article = '(?:\s*) ( (?<=\A|\s) ', join( ' ', @stack ), ' (?=\s|\Z) ) (?:\s*)';
+      push @$perms, qr/$shuffled_article/x;
+   }
+
+   return $perms;
 }
 
 sub generate_article_regex {
-    my $article = shift;
-    my @token_re;
-    my ( $capture_index, $n_tokens ) = ( -1, 0 );
+    my $self = shift;
+    my ($n, @token_regexs);
 
-    foreach my $token ( grep { length } split m/\s+/, $article ) {
-        my $token_re = ' (?<=\s) ';
+    foreach my $token ( grep { length } split m/\s+/, $self->{article}{name} ) {
+       my $token_regex;
 
-        if ( length $token > 1 ) {
-            $token_re .= join ' ',
-                map "(?<c_$n_tokens>$_)? (?<i_$n_tokens>.*?)", ( split '', $token )[ 0 .. length( $token ) - 2 ];
-            $token_re .= " (?<c_$n_tokens>" . chop( $token ) . ')?';
-        }
-        else {
-            $token_re .= "(?<c_$n_tokens>$token)";
-        }
-
-        push @token_re, $token_re . ' (?=\s) ';
-        $n_tokens++;
+       $token_regex = join ' ', map { state $x = 0; "(?<c_$n>$_)?" . ( ++$x < length $token ? "(?<i_$n>.*?)" : '' ) } split '', $token;
+       push @token_regexs, $token_regex;
+       $n++;
     }
 
-    my $article_regex = '(?:\s+) (' . join( ' (?<words>.*?) ', @token_re ) . ') (?:\s+)';
-    return {
-        number_tokens => $n_tokens,
-        regex => qr/$article_regex/x,
-     };
+    $self->{article}{ntoken} = $n;
+    $self->{article}{regex} = $self->generate_perms(@token_regexs);
+    return $self;
 }
 
-sub apply_edit_distance {
-    my ( $token_re, $article, $tags_content, $config ) = @_;
+sub search_article {
+   my $self = shift;
     my @target_article;
 
     while ( $tags_content =~ m/$token_re->{regex}/gso ) {
@@ -83,7 +108,7 @@ sub apply_edit_distance {
         foreach my $inner_words ( grep { defined } $-{words}->@* ) {
             $nwords = () = $inner_words =~ m/ (?<=\s{0,1}) (\S+) (?=\s{0,1}) /gx;
 
-            if ( $nwords > $config->{MAX_WORD_COUNT_BETWEEN} ) {
+            if ( $nwords > $CONFIGS{MAX_WORD_COUNT_BETWEEN} ) {
                if ( pos( $token_re->{regex}) != length $tags_content ) {
                   pos $token_re->{regex} = $+[1] + 1;
                }
@@ -100,16 +125,16 @@ sub apply_edit_distance {
 
            $total_i += @$i;
            $total_c += @$c;
-           if (   ( ( @$c / length $article ) * 100 < $config->{MAX_OCCURENCE_PERC} )
+           if (   ( ( @$c / length $article ) * 100 < $CONFIGS{MAX_OCCURENCE_PERC} )
                || ( grep { defined } @$i > $MAX_INTER )
-               || ( grep { defined && length > $config->{MAX_INTER_LENGTH} } @$i ) ) {
+               || ( grep { defined && length > $CONFIGS{MAX_INTER_LENGTH} } @$i ) ) {
               next
            }
            $valid_tokens++;
         }
 
         # Avoid this if a good percentage of tokens are valid
-        if ( ( $valid_tokens / $token_re->{number_tokens} ) * 100 < $config->{VALID_TOKEN_PERC} ) {
+        if ( ( $valid_tokens / $token_re->{number_tokens} ) * 100 < $CONFIGS{VALID_TOKEN_PERC} ) {
             if ( pos( $token_re->{regex}) != length $tags_content ) {
                pos $token_re->{regex} = $+[1] + 1;
             }
