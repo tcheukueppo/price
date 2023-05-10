@@ -7,9 +7,9 @@ use feature qw(say state);
 use Getopt::Long;
 use Data::Dumper;
 
-# Configuration search precision
+# configuration search precision
 my %CONFIGS = {
-   MAX_INTER            => 2,
+   MAX_INTER_PERC       => 80,
    MAX_INTER_LENGTH     => 1,
    MAX_INNER_WORD_COUNT => 1,
    MAX_OCCURENCE_PERC   => 90,
@@ -74,7 +74,7 @@ sub generate_perms {
       my $shuffled_article;
 
       $stack[0] = "(?<fw> $stack[0] )" if @stack > 1;
-      $shuffled_article = '(?:\s*) ( (?<=\A|\s) ', join( ' ', @stack ), ' (?=\s|\Z) ) (?:\s*)';
+      $shuffled_article = '(?:\s*) (?<a> (?<=\A|\s) ', join( ' (?<gap> .*? ) ', @stack ), ' (?=\s|\Z) ) (?:\s*)';
       push @$perms, qr/$shuffled_article/x;
    }
 
@@ -86,73 +86,69 @@ sub generate_article_regex {
     my ($n, @token_regexs);
 
     foreach my $token ( grep { length } split m/\s+/, $self->{article}{name} ) {
-       my $token_regex;
+       my $token_regex = '( ';
 
-       $token_regex = join ' ', map { state $x = 0; "(?<c_$n>$_)?" . ( ++$x < length $token ? "(?<i_$n>.*?)" : '' ) } split '', $token;
+       $token_regex .= join ' ', map { state $x = 0; "(?<c_$n>$_)?" . ( ++$x < length($token) ? "(?<i_$n>.*?)" : '' ) } split '', $token;
+       $token_regex .= ') ';
        push @token_regexs, $token_regex;
        $n++;
     }
 
-    $self->{article}{ntoken} = $n;
-    $self->{article}{regex} = $self->generate_perms(@token_regexs);
+    $self->{article}{n} = $n;
+    $self->{article}{regexs} = $self->generate_perms(@token_regexs);
     return $self;
 }
 
 sub search_article {
    my $self = shift;
-    my @target_article;
+   my @articles;
 
-    while ( $tags_content =~ m/$token_re->{regex}/gso ) {
-        my $nwords = 0;
+    READ_CONTENTS: while () {
 
-        foreach my $inner_words ( grep { defined } $-{words}->@* ) {
-            $nwords = () = $inner_words =~ m/ (?<=\s{0,1}) (\S+) (?=\s{0,1}) /gx;
+        my (@extracted, @pos );
+        foreach my $article_regex ($self->{article}{regexs}) {
 
-            if ( $nwords > $CONFIGS{MAX_WORD_COUNT_BETWEEN} ) {
-               if ( pos( $token_re->{regex}) != length $tags_content ) {
-                  pos $token_re->{regex} = $+[1] + 1;
-               }
-               next 2;
-            }
-        }
+           last READ_CONTENTS unless $self->{contents} ~= m/$article_regex/gso;
 
-        my $valid_tokens = 0;
-        my ( $total_i, $total_c ) = ();
+           my $n_valid_tokens = 0;
+           my ( $total_i, $total_c ) = ();
 
-        foreach my $cap_index ( 1 .. $token_re->{number_tokens} ) {
-           my $i = $-{ 'i_' . $cap_index } // [];
-           my $c = $-{ 'c_' . $cap_index } // [];
+           foreach my $capture_index ( 1 .. $self->{article}{n} ) {
+              my $i = $-{ 'i_' . $capture_index } // [];
+              my $c = $-{ 'c_' . $capture_index } // [];
 
-           $total_i += @$i;
-           $total_c += @$c;
-           if (   ( ( @$c / length $article ) * 100 < $CONFIGS{MAX_OCCURENCE_PERC} )
-               || ( grep { defined } @$i > $MAX_INTER )
-               || ( grep { defined && length > $CONFIGS{MAX_INTER_LENGTH} } @$i ) ) {
-              next
+              $total_i += @$i;
+              $total_c += @$c;
+              no strict 'refs';
+              if (   ( ( @$c / length $$capture_index ) * 100 < $CONFIGS{MAX_OCCURENCE_PERC} )
+                  || ( grep { defined && length > $CONFIGS{MAX_INTER_LENGTH} } @$i ) ) {
+                 next
+              }
+
+              my $nwords = defined $-{gap}[$capture_index - 1] ? () = $-{gap}[$capture_index - 1] =~ m/(?<=\s{0,1})(\S+)(?=\s{0,1})/gx : 0;
+              push @re_pos, $-[$capture_index] if $nwords <= $CONFIGS{MAX_WORD_COUNT_BETWEEN};
+              $n_valid_tokens++;
            }
-           $valid_tokens++;
-        }
 
-        # Avoid this if a good percentage of tokens are valid
-        if ( ( $valid_tokens / $token_re->{number_tokens} ) * 100 < $CONFIGS{VALID_TOKEN_PERC} ) {
-            if ( pos( $token_re->{regex}) != length $tags_content ) {
-               pos $token_re->{regex} = $+[1] + 1;
-            }
-        }
-        else {
-            push @target_article, [ $1, $nwords, $total_i, $total_c  ];
-        }
-    }
+           next if $n_valid_tokens == 0;
 
-    return (
-       sort {
-          $b->[ 3 ] <=> $a->[ 3 ]
-                    ||
-          $a->[ 2 ] <=> $b->[ 2 ]
-                    ||
-          $a->[ 1 ] <=> $b->[ 1 ]
-       } @target_article
-    ) [ @target_article ][ 0 ];
+           # Avoid this if a good percentage of tokens are valid
+           if ( ( $n_valid_tokens / $token_re->{number_tokens} ) * 100 >= $CONFIGS{VALID_TOKEN_PERC} ) {
+               push @extracted, [ $+{a}, $total_i, $total_c  ];
+           }
+       }
+
+      if (@re_pos) {
+        my $min_pos = min @pos;
+        pos $_ = $min_pos foreach $self->{article}{regexs};
+      }
+
+      if (@extracted) {
+         push @articles, sort { } @extracted;
+      }
+   }
+
+   return @articles;
 }
 =head1 NAME
 
