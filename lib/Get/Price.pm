@@ -2,18 +2,18 @@ package Get::Price;
 
 use strict;
 use warnings;
-use feature qw(say state);
+use feature qw(state);
 
-use Getopt::Long;
-use Data::Dumper;
+use Carp;
+use List::Util qw(min);
 
 # configuration search precision
-my %CONFIGS = {
-   MAX_INTER_PERC       => 80,
-   MAX_INTER_LENGTH     => 1,
-   MAX_INNER_WORD_COUNT => 1,
-   MAX_OCCURENCE_PERC   => 90,
-};
+my %CONFIGS = (
+    MAX_INTER_LENGTH     => 1,
+    MAX_INNER_WORD_COUNT => 1,
+    MAX_OCCURENCE_PERC   => 90,
+    TWEAK_CONFIGS        => 1,
+);
 
 # regex for matching prices in different units
 my $PRICE_RE = qr/
@@ -43,113 +43,126 @@ my $PRICE_RE = qr/
 /x;
 
 sub new {
-   my $self = shift;
-   my ( $contents, $article, %configs ) = @_;
+    my $self = shift;
+    my ( $contents, $article, %configs ) = @_;
 
-   foreach $key (keys %configs) {
-      exists $CONFIGS{$key} || croak "unknown configuration '$configs' => $configs{$key}";
-      $CONFIGS{$key} = $configs{$key};
-   }
+    foreach my $key ( keys %configs ) {
+        exists $CONFIGS{$key} || Carp::croak "unknown configuration '$key' => $configs{$key}";
+        $CONFIGS{$key} = $configs{$key};
+    }
 
-   bless {
-      contents => $contents,
-      article  => { name => $article, },
-   }, $self;
+    bless {
+        contents => $contents,
+        article  => { name => $article, },
+    }, $self;
 
-   return $self->generate_article_regex();
+    return $self->generate_article_regex();
 }
 
 sub generate_perms {
-   my ( $self, @token_regexs ) = @_;
-   state ( $perms, @stack );
+    my ( $self, @token_regexs ) = @_;
+    state( $perms, @stack );
 
-   if ( @token_regexs ) {
-      foreach my $index (0..$#token_regexs) {
-         push @stack, $token_regexs[$index];
-         $self->generate_perms(grep { $token_regexs[$index] eq $_ } @token_regexs);
-         pop @stack;
-      }
-   }
-   else {
-      my $shuffled_article;
+    if ( @token_regexs ) {
+        foreach my $index ( 0 .. $#token_regexs ) {
+            push @stack, $token_regexs[ $index ];
+            $self->generate_perms( grep { $token_regexs[ $index ] eq $_ } @token_regexs );
+            pop @stack;
+        }
+    }
+    else {
+        my $shuffled_article;
 
-      $stack[0] = "(?<fw> $stack[0] )" if @stack > 1;
-      $shuffled_article = '(?:\s*) (?<a> (?<=\A|\s) ', join( ' (?<gap> .*? ) ', @stack ), ' (?=\s|\Z) ) (?:\s*)';
-      push @$perms, qr/$shuffled_article/x;
-   }
+        $stack[ 0 ]       = "(?<fw> $stack[0] )" if @stack > 1;
+        $shuffled_article = '(?:\s*) (?<a> (?<=\A|\s) ' . join( ' (?<gap> .*? ) ', @stack ) . ' (?=\s|\Z) ) (?:\s*)';
+        push @$perms, qr/$shuffled_article/x;
+    }
 
-   return $perms;
+    return $perms;
 }
 
 sub generate_article_regex {
     my $self = shift;
-    my ($n, @token_regexs);
+    my ( $n, @token_regexs );
 
     foreach my $token ( grep { length } split m/\s+/, $self->{article}{name} ) {
-       my $token_regex = '( ';
+        my $token_regex = '( ';
 
-       $token_regex .= join ' ', map { state $x = 0; "(?<c_$n>$_)?" . ( ++$x < length($token) ? "(?<i_$n>.*?)" : '' ) } split '', $token;
-       $token_regex .= ') ';
-       push @token_regexs, $token_regex;
-       $n++;
+        $token_regex .= join ' ', map { state $x = 0; "(?<c_$n>$_)?" . ( ++$x < length( $token ) ? "(?<i_$n>.*?)" : '' ) } split '', $token;
+        $token_regex .= ') ';
+        push @token_regexs, $token_regex;
+        $n++;
     }
 
-    $self->{article}{n} = $n;
-    $self->{article}{regexs} = $self->generate_perms(@token_regexs);
+    $self->{article}{n}      = $n;
+    $self->{article}{regexs} = $self->generate_perms( @token_regexs );
     return $self;
 }
 
 sub search_article {
-   my $self = shift;
-   my @articles;
+    my $self = shift;
+    my @articles;
 
-    READ_CONTENTS: while () {
+READ_CONTENTS: while () {
 
-        my (@extracted, @pos );
-        foreach my $article_regex ($self->{article}{regexs}) {
+        my ( @extracted, @re_pos );
+        foreach my $index ( 0 .. $self->{article}{regexs}->$#* ) {
 
-           last READ_CONTENTS unless $self->{contents} ~= m/$article_regex/gso;
+            last READ_CONTENTS unless $self->{contents} =~ m/$self->{article}{regexs}[$index]/gso;
 
-           my $n_valid_tokens = 0;
-           my ( $total_i, $total_c ) = ();
+            my $n_valid_tokens = 0;
+            my ( $total_i, $total_c, $total_gaps );
 
-           foreach my $capture_index ( 1 .. $self->{article}{n} ) {
-              my $i = $-{ 'i_' . $capture_index } // [];
-              my $c = $-{ 'c_' . $capture_index } // [];
+            foreach my $capture_index ( 1 .. $self->{article}{n} ) {
+                my $i      = $-{ 'i_' . $capture_index } // [];
+                my $c      = $-{ 'c_' . $capture_index } // [];
+                my $nwords = defined $-{gap}[ $capture_index - 1 ] ? () = $-{gap}[ $capture_index - 1 ] =~ m/(?<=\s{0,1})(\S+)(?=\s{0,1})/gx : 0;
 
-              $total_i += @$i;
-              $total_c += @$c;
-              no strict 'refs';
-              if (   ( ( @$c / length $$capture_index ) * 100 < $CONFIGS{MAX_OCCURENCE_PERC} )
-                  || ( grep { defined && length > $CONFIGS{MAX_INTER_LENGTH} } @$i ) ) {
-                 next
-              }
+                $total_i    += @$i;
+                $total_c    += @$c;
+                $total_gaps += $nwords;
 
-              my $nwords = defined $-{gap}[$capture_index - 1] ? () = $-{gap}[$capture_index - 1] =~ m/(?<=\s{0,1})(\S+)(?=\s{0,1})/gx : 0;
-              push @re_pos, $-[$capture_index] if $nwords <= $CONFIGS{MAX_WORD_COUNT_BETWEEN};
-              $n_valid_tokens++;
-           }
+                no strict 'refs';
+                if (   ( ( @$c / length $$capture_index ) * 100 < $CONFIGS{MAX_OCCURENCE_PERC} )
+                    || ( grep { defined && length > $CONFIGS{MAX_INTER_LENGTH} } @$i ) ) {
+                    next;
+                }
 
-           next if $n_valid_tokens == 0;
+                push @re_pos, $-[ $capture_index ] if $nwords <= $CONFIGS{MAX_WORD_COUNT_BETWEEN};
+                $n_valid_tokens++;
+            }
 
-           # Avoid this if a good percentage of tokens are valid
-           if ( ( $n_valid_tokens / $token_re->{number_tokens} ) * 100 >= $CONFIGS{VALID_TOKEN_PERC} ) {
-               push @extracted, [ $+{a}, $total_i, $total_c  ];
-           }
-       }
+            next if $n_valid_tokens == 0;
 
-      if (@re_pos) {
-        my $min_pos = min @pos;
-        pos $_ = $min_pos foreach $self->{article}{regexs};
-      }
+            if ( ( $n_valid_tokens / $self->{article}{n} ) * 100 >= $CONFIGS{VALID_TOKEN_PERC} ) {
+                push @extracted, {
+                    extracted       => $+{a},
+                    n_invalid_chars => $total_i,
+                    n_valid_chars   => $total_c,
+                    n_gaps          => $total_gaps,
+                    likely          => $index,
+                };
+            }
+        }
 
-      if (@extracted) {
-         push @articles, sort { } @extracted;
-      }
-   }
+        if ( @re_pos ) {
+            my $min_pos = min @re_pos;
+            pos $_ = $min_pos foreach $self->{article}{regexs};
+        }
 
-   return @articles;
+        if ( @extracted ) {
+            push @articles, sort {
+                       $b->{n_valid_chars}   <=> $a->{n_valid_chars}
+                    || $b->{n_invalid_chars} <=> $a->{n_invalid_chars}
+                    || $b->{n_gaps}          <=> $a->{n_gaps}
+                    || $b->{likely}          <=> $a->{likely}
+            } @extracted;
+        }
+    }
+
+    return @articles;
 }
+
 =head1 NAME
 
 Get::Price - The great new Get::Price!
@@ -161,7 +174,6 @@ Version 0.01
 =cut
 
 our $VERSION = '0.01';
-
 
 =head1 SYNOPSIS
 
@@ -248,4 +260,4 @@ This is free software, licensed under:
 
 =cut
 
-1; # End of Get::Price
+1;    # End of Get::Price
