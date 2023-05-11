@@ -1,20 +1,19 @@
 package Util;
+
 use strict;
 use warnings;
-
-use feature qw(say);
 
 sub ReadText {
    my $file = shift;
 
+   local $/;
    open my $fh, '<', $file or die "$!\n";
 
-   local $/;
    my ( $text, $av ) = ( <$fh> );
-   while ( $text =~ /\G\s*@@\s*(?<a>[^@]+)/gs ) { 
+   while ( $text =~ /\G\s*@@\s*(?<a>[^@]+)(?<!\s)\s*/g ) {
       my $article = $+{a};
 
-      push $av->{$article}->@*, $+{c} while $text =~ /\G\s*@\s*(?<c>(?>(?:\\@|[^@])+))/gsc;
+      push $av->{$article}->@*, $+{c} while $text =~ /\G\s*@\s*(?<c>(?:\\@|[^@]+))(?<!\s)\s*/gc;
    }
 
    return $av;
