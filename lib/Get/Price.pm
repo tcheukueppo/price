@@ -13,6 +13,7 @@ my %CONFIGS = (
     MAX_INNER_WORD_COUNT => 1,
     MAX_OCCURENCE_PERC   => 90,
     TWEAK_CONFIGS        => 1,
+    REPSECT_ORDER        => 1,
 );
 
 # regex for matching prices in different units
@@ -43,48 +44,27 @@ my $PRICE_RE = qr/
 /x;
 
 sub new {
-    my $self = shift;
-    my ( $article, $contents, %configs ) = @_;
+    my ( $class, $article, $contents, %configs ) = @_;
 
     foreach my $key ( keys %configs ) {
         exists $CONFIGS{$key} || Carp::croak "unknown configuration '$key' => $configs{$key}";
         $CONFIGS{$key} = $configs{$key};
     }
 
-    bless {
+    my $self = bless {
         contents => $contents,
         article  => { name => $article, },
-    }, $self;
+    }, $class;
 
     return $self->generate_article_regex();
 }
 
-sub _generate_perms {
-    my @token_regexs = @_;
-
-    state( $perms, @stack );
-    if (@token_regexs) {
-        foreach my $index ( 0 .. $#token_regexs ) {
-            push @stack, delete $token_regexs[ $index ];
-            __SUB__->_generate_perms(@token_regexs);
-            pop @stack;
-        }
-    }
-    else {
-        my $shuffled_article;
-
-        $shuffled_article = '(?:\s*) (?<a> (?<=\A|\s) ' . join( ' (?<gap> .*? ) ', @stack ) . ' (?=\s|\Z) ) (?:\s*)';
-        push @$perms, qr/$shuffled_article/sx;
-    }
-
-    return $perms;
-}
-
 sub generate_article_regex {
     my $self = shift;
-    my ( $n, @token_regexs );
+    my $n    = 0;
+    my @token_regexs;
 
-    foreach my $token ( grep { length } split m/\s+/, $self->{article}{name} ) {
+    foreach my $token ( grep { length } split /\s+/, $self->{article}{name} ) {
         my $token_regex = '( ';
 
         $token_regex .= join ' ',
@@ -96,8 +76,21 @@ sub generate_article_regex {
     }
 
     $self->{article}{n}      = $n;
-    $self->{article}{regexs} = _generate_perms(@token_regexs);
+    $self->{article}{regexs} = $self->_shuffle_regexs(@token_regexs);
     return $self;
+}
+
+sub _shuffle_regexs {
+    my ( $self, @token_regexs ) = @_;
+    my ( $start, $end, $gap ) = ( '(?:\s*) (?<a> (?<=\A|\s) ', '(?=\s|\Z) ) (?:\s*)', '(?<gap> .*? )' );
+
+    my $perms;
+    push @$perms,
+        map { qr/$_/xs }
+        map { $start . join( $gap, @$_ ) . $end }
+        ( $CONFIGS{RESPECT_ORDER} ? [ @token_regexs ] : _permutations(@token_regexs) );
+
+    return $perms;
 }
 
 sub search_article {
@@ -164,6 +157,25 @@ READ_CONTENTS: while () {
     }
 
     return @articles;
+}
+
+sub _permutations {
+    my @token_regexs = @_;
+    state( @perms, @stack );
+
+    if (@token_regexs) {
+        foreach my $index ( 0 .. $#token_regexs ) {
+            push @stack, delete $token_regexs[ $index ];
+            __SUB__->_permutations(@token_regexs);
+            pop @stack;
+        }
+    }
+    else {
+        my $shuffled_article;
+        push @perms, $shuffled_article;
+    }
+
+    return @perms;
 }
 
 =head1 NAME
