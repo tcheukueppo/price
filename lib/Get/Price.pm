@@ -2,7 +2,7 @@ package Get::Price;
 
 use strict;
 use warnings;
-use feature qw(state);
+use feature qw(state current_sub);
 
 use Carp;
 use List::Util qw(min);
@@ -44,7 +44,7 @@ my $PRICE_RE = qr/
 
 sub new {
     my $self = shift;
-    my ( $contents, $article, %configs ) = @_;
+    my ( $article, $contents, %configs ) = @_;
 
     foreach my $key ( keys %configs ) {
         exists $CONFIGS{$key} || Carp::croak "unknown configuration '$key' => $configs{$key}";
@@ -59,23 +59,22 @@ sub new {
     return $self->generate_article_regex();
 }
 
-sub generate_perms {
-    my ( $self, @token_regexs ) = @_;
-    state( $perms, @stack );
+sub _generate_perms {
+    my @token_regexs = @_;
 
-    if ( @token_regexs ) {
+    state( $perms, @stack );
+    if (@token_regexs) {
         foreach my $index ( 0 .. $#token_regexs ) {
-            push @stack, $token_regexs[ $index ];
-            $self->generate_perms( grep { $token_regexs[ $index ] eq $_ } @token_regexs );
+            push @stack, delete $token_regexs[ $index ];
+            __SUB__->_generate_perms(@token_regexs);
             pop @stack;
         }
     }
     else {
         my $shuffled_article;
 
-        $stack[ 0 ]       = "(?<fw> $stack[0] )" if @stack > 1;
         $shuffled_article = '(?:\s*) (?<a> (?<=\A|\s) ' . join( ' (?<gap> .*? ) ', @stack ) . ' (?=\s|\Z) ) (?:\s*)';
-        push @$perms, qr/$shuffled_article/x;
+        push @$perms, qr/$shuffled_article/sx;
     }
 
     return $perms;
@@ -88,14 +87,16 @@ sub generate_article_regex {
     foreach my $token ( grep { length } split m/\s+/, $self->{article}{name} ) {
         my $token_regex = '( ';
 
-        $token_regex .= join ' ', map { state $x = 0; "(?<c_$n>$_)?" . ( ++$x < length( $token ) ? "(?<i_$n>.*?)" : '' ) } split '', $token;
+        $token_regex .= join ' ',
+            map { state $x = 0; "(?<c_$n>$_)?" . ( ++$x < length($token) ? "(?<i_$n>.*?)" : '' ) } split '', $token;
         $token_regex .= ') ';
+
         push @token_regexs, $token_regex;
         $n++;
     }
 
     $self->{article}{n}      = $n;
-    $self->{article}{regexs} = $self->generate_perms( @token_regexs );
+    $self->{article}{regexs} = _generate_perms(@token_regexs);
     return $self;
 }
 
@@ -116,7 +117,9 @@ READ_CONTENTS: while () {
             foreach my $capture_index ( 1 .. $self->{article}{n} ) {
                 my $i      = $-{ 'i_' . $capture_index } // [];
                 my $c      = $-{ 'c_' . $capture_index } // [];
-                my $nwords = defined $-{gap}[ $capture_index - 1 ] ? () = $-{gap}[ $capture_index - 1 ] =~ m/(?<=\s{0,1})(\S+)(?=\s{0,1})/gx : 0;
+                my $nwords = defined $-{gap}[ $capture_index - 1 ]
+                    ? () = $-{gap}[ $capture_index - 1 ] =~ m/(?<=\s{0,1})(\S+)(?=\s{0,1})/gx
+                    : 0;
 
                 $total_i    += @$i;
                 $total_c    += @$c;
@@ -145,12 +148,12 @@ READ_CONTENTS: while () {
             }
         }
 
-        if ( @re_pos ) {
+        if (@re_pos) {
             my $min_pos = min @re_pos;
             pos $_ = $min_pos foreach $self->{article}{regexs};
         }
 
-        if ( @extracted ) {
+        if (@extracted) {
             push @articles, sort {
                        $b->{n_valid_chars}   <=> $a->{n_valid_chars}
                     || $b->{n_invalid_chars} <=> $a->{n_invalid_chars}
