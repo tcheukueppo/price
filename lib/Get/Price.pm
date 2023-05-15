@@ -2,19 +2,11 @@ package Get::Price;
 
 use strict;
 use warnings;
-use feature qw(state current_sub);
+use feature qw(current_sub fc);
 
 use Carp;
-use List::Util qw(min);
-
-# configuration search precision
-my %CONFIGS = (
-    MAX_INTER_LENGTH     => 1,
-    MAX_INNER_WORD_COUNT => 1,
-    MAX_OCCURENCE_PERC   => 90,
-    TWEAK_CONFIGS        => 1,
-    REPSECT_ORDER        => 1,
-);
+use Memoize;
+use List::Util qw(min max uniq);
 
 # regex for matching prices in different units
 my $PRICE_RE = qr/
@@ -44,139 +36,117 @@ my $PRICE_RE = qr/
 /x;
 
 sub new {
-    my ( $class, $article, $contents, %configs ) = @_;
+   my ($class, $article, $contents) = @_;
 
-    foreach my $key ( keys %configs ) {
-        exists $CONFIGS{$key} || Carp::croak "unknown configuration '$key' => $configs{$key}";
-        $CONFIGS{$key} = $configs{$key};
-    }
+   my $self = bless {
+                     contents => $contents,
+                     article  => {name => $article},
+                    }, $class;
 
-    my $self = bless {
-        contents => $contents,
-        article  => { name => $article, },
-    }, $class;
-
-    return $self->generate_article_regex();
+   return $self->get_article_regex;
 }
 
-sub generate_article_regex {
-    my $self = shift;
-    my $n    = 0;
-    my @token_regexs;
-
-    foreach my $token ( grep { length } split /\s+/, $self->{article}{name} ) {
-        my $token_regex = '( ';
-
-        $token_regex .= join ' ',
-            map { state $x = 0; "(?<c_$n>$_)?" . ( ++$x < length($token) ? "(?<i_$n>.*?)" : '' ) } split '', $token;
-        $token_regex .= ') ';
-
-        push @token_regexs, $token_regex;
-        $n++;
-    }
-
-    $self->{article}{n}      = $n;
-    $self->{article}{regexs} = $self->_shuffle_regexs(@token_regexs);
-    return $self;
+sub article {
+   $_[0]->{article}{name} = $_[1] // return $_[0]->{article}{name};
+   return $_[0]->get_article_regex;
 }
 
-sub _shuffle_regexs {
-    my ( $self, @token_regexs ) = @_;
-    my ( $start, $end, $gap ) = ( '(?:\s*) (?<a> (?<=\A|\s) ', '(?=\s|\Z) ) (?:\s*)', '(?<gap> .*? )' );
-
-    my $perms;
-    push @$perms,
-        map { qr/$_/xs }
-        map { $start . join( $gap, @$_ ) . $end }
-        ( $CONFIGS{RESPECT_ORDER} ? [ @token_regexs ] : _permutations(@token_regexs) );
-
-    return $perms;
+sub contents {
+   my $self = shift;
+   $self->{contents} = (shift() // return $self->{contents}) ? $_[0] : [@{$self->{contents}}, @$_[0]];
 }
 
+# Perform small NLP to detect our targeting article
 sub search_article {
-    my $self = shift;
-    my @articles;
+   my ($self, %args) = @_;
 
-READ_CONTENTS: while () {
+   # Search configuration
+   my $configs = {
+                  repsect_order   => 0,
+                  leven_preselect => 1,
+                  edit_distance   => 4,
+                 };
 
-        my ( @extracted, @re_pos );
-        foreach my $index ( 0 .. $self->{article}{regexs}->$#* ) {
+   exists $configs->{$_} || Carp::croak "unknown configuration '$_' => '$args{$_}'", $config->{$_} = $args{$_}
+     foreach keys %args;
 
-            last READ_CONTENTS unless $self->{contents} =~ m/$self->{article}{regexs}[$index]/gso;
+   # TODO: Change to Damerau-Levenshtein --> Change preselection
+   my $levenshtein = sub {
+      my ($x, $y) = @_;
 
-            my $n_valid_tokens = 0;
-            my ( $total_i, $total_c, $total_gaps );
+      return length($x || $y) unless $y || $x;
 
-            foreach my $capture_index ( 1 .. $self->{article}{n} ) {
-                my $i      = $-{ 'i_' . $capture_index } // [];
-                my $c      = $-{ 'c_' . $capture_index } // [];
-                my $nwords = defined $-{gap}[ $capture_index - 1 ]
-                    ? () = $-{gap}[ $capture_index - 1 ] =~ m/(?<=\s{0,1})(\S+)(?=\s{0,1})/gx
-                    : 0;
+      my ($_x, $_y) = (substr($x, 1), substr($y, 1));
 
-                $total_i    += @$i;
-                $total_c    += @$c;
-                $total_gaps += $nwords;
+      substr($x, 1, 0) eq substr($y, 1, 0)
+        ? __SUB__->($_x, $_y)
+        : 1 + min(__SUB__->($_x, $_y), __SUB__->($x, $_y), __SUB__->($_x, $y));
+   };
 
-                no strict 'refs';
-                if (   ( ( @$c / length $$capture_index ) * 100 < $CONFIGS{MAX_OCCURENCE_PERC} )
-                    || ( grep { defined && length > $CONFIGS{MAX_INTER_LENGTH} } @$i ) ) {
-                    next;
-                }
+   memoize($levenshtein);    # DP!
 
-                push @re_pos, $-[ $capture_index ] if $nwords <= $CONFIGS{MAX_WORD_COUNT_BETWEEN};
-                $n_valid_tokens++;
+   my @article_tokens = grep { length } split /\s+/, fc $self->{article}{name};
+
+   foreach my $content (@{$self->{article}{contents}}) {
+      my ($article_index, $gaps) = (0);
+
+      while ($content =~ / \G ( \s* (.+?) ) \b{wb} /gcx) {
+         my $token   = fc $2;
+         my $article = ($self->{article}{found}[$article_index] //= {});
+
+         # Completely extracted
+         if ($token eq '.' || (exists $article{start} && pos $content == length $content)) {
+            $article->{end} = $+[1];
+            $start = 0;
+            ++$article_index;
+            next;
+         }
+
+         if ($1 =~ /^\p{Punct}*$/) {
+            $article->{value} .= $1 if exists $article->{start};
+            next;
+         }
+
+         # Select candidates for levenshtein
+         my @candidates = @article_token;
+         @candidates =
+           map {
+              my $c = uniq @{[ / [ (??{ quotemeta($token) }) ] /gxx ]};
+              max(length() - $c, length($token) - $c) > $configs->{edit_distance} ? $_ : ()
+           } @article_token
+           if $configs->{leven_preselect};
+
+         my $f = (sort { $a->[1] <=> $b->[1] } map { [$_, $levenshtein->($_, fc $2)] } @$candidates)[0];
+
+         if ($f and $f->[1] <= $configs->{edit_distance}) {
+            $article->{start} //= $-[1];
+            $article->{value} .= $1;
+
+            $article = {} if $configs->{respect_order} && $f->[0] != "val";
+         }
+         elsif (exists $article->{start}) {
+            if ($gaps < $configs->{max_gap}) {
+               $article->{value} .= $1;
+               ++$gaps;
             }
-
-            next if $n_valid_tokens == 0;
-
-            if ( ( $n_valid_tokens / $self->{article}{n} ) * 100 >= $CONFIGS{VALID_TOKEN_PERC} ) {
-                push @extracted, {
-                    extracted       => $+{a},
-                    n_invalid_chars => $total_i,
-                    n_valid_chars   => $total_c,
-                    n_gaps          => $total_gaps,
-                    likely          => $index,
-                };
+            else {
+               $article->{end} = $-[1] - 1;
+               $gaps = 0;
             }
-        }
+         }
+      }
+   }
 
-        if (@re_pos) {
-            my $min_pos = min @re_pos;
-            pos $_ = $min_pos foreach $self->{article}{regexs};
-        }
-
-        if (@extracted) {
-            push @articles, sort {
-                       $b->{n_valid_chars}   <=> $a->{n_valid_chars}
-                    || $b->{n_invalid_chars} <=> $a->{n_invalid_chars}
-                    || $b->{n_gaps}          <=> $a->{n_gaps}
-                    || $b->{likely}          <=> $a->{likely}
-            } @extracted;
-        }
-    }
-
-    return @articles;
+   return $self;
 }
 
-sub _permutations {
-    my @token_regexs = @_;
-    state( @perms, @stack );
+sub search_money {
+   my ($self, $unit) = @_;
 
-    if (@token_regexs) {
-        foreach my $index ( 0 .. $#token_regexs ) {
-            push @stack, delete $token_regexs[ $index ];
-            __SUB__->_permutations(@token_regexs);
-            pop @stack;
-        }
-    }
-    else {
-        my $shuffled_article;
-        push @perms, $shuffled_article;
-    }
-
-    return @perms;
+   # ...
 }
+
+=encoding utf8
 
 =head1 NAME
 
