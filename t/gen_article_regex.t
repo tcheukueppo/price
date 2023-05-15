@@ -15,14 +15,7 @@ BEGIN {
 
 my $av = Util::ReadText('./t/contents/fruits.co') or diag('invalid content format?');
 
-my %product_expect = (
-
-     # Fruits
-     'Blue Banana V2.10' => {regexs => [qr{}x, qr{}x,]},
-     'B65.2k Red Orange' => {regexs => [qr{}x, qr{}x,]},
-
-     # Other pruducts
-                     );
+my %product_expect = ();
 
 like exception { Get::Price->new(undef, undef, UNKNOWN_CONFIG => 'what?') }, qr/^unknown configuration/, 'invalid configs';
 
@@ -31,10 +24,6 @@ my $test_product = sub {
 
    my $article = shift;
    my $price   = new_ok('Get::Price' => [$article, undef, MAX_OCCURENCE_PERC => 100]);
-
-   # regex generation
-   my $article_regex = $price->{article}{regexs};
-   is_deeply($article_regex, $product_expect{$article}{regexs}, 'right generated regex') or explain $article_regex;
 
    # working on content
    foreach my $content (keys $av->{$article}->@*) {

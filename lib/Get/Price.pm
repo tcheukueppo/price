@@ -10,12 +10,12 @@ use List::Util qw(min max uniq);
 
 # regex for matching prices in different units
 my $PRICE_RE = qr/
-   (?<i> (?&FLOAT) ) (?<u> (?&UNITS) )?
+   (?<i> (?&FLOAT) ) (?<u> (?&UNIT) )?
    (?&PAD) (?<r> (?&RANGE) ) (?&PAD)
    (?(<r>)
       (?<ii> (?&FLOAT) )?
       (?(<ii>)
-         (?<u> (?&UNITS) )?
+         (?<u> (?&UNIT) )?
       )
    )
    (?(DEFINE)
@@ -27,7 +27,7 @@ my $PRICE_RE = qr/
       (?<EURO> € | &euro; | (?i: euro(?:s)? ) )
       # define units here
 
-      (?<UNITS>
+      (?<UNIT>
            (?&DOLLAR) 
          | (?&EURO)
          # more units
@@ -87,35 +87,35 @@ sub search_article {
 
    memoize($levenshtein);    # DP!
 
-   my @article_tokens = grep { length } split /\s+/, fc $self->{article}{name};
+   my $article_token = [ grep { length } split /\s+/, fc $self->{article}{name} ];
 
    foreach my $paragraph (@{$self->{article}{contents}}) {
       my $index = 0;
 
       while ($paragraph =~ /\G \s* ( .+? \b{wb}(?: [.] | (?= \s+ \Z ) )\b{wb} ) \s*/gsx) {
-         my $sentence = $1;
+         my $sentence= $1;
 
-         my (@sentences, $score);
-         while ($sentence =~ /\G ( \s* (.+?) ) \b{wb} \s*/gcx) {
-            my $token = fc $2;
+         my (@sentences, $score, $gaps);
+         while ($sentence =~ /\G \s* (.+?) \b{wb} \s*/gcx) {
+            my $token = fc $1;
 
             # completely extracted
-            if ($token eq '.', pos($sentence) == length $sentence) {
+            if ($token eq '.' || pos($sentence) == length $sentence) {
                push @sentences, [$score, $sentence] if $score;
                last;
             }
 
-            next if $1 =~ /^\p{Punct}+$/;
+            next if $token =~ /^\p{Punct}+$/;
 
             # Select candidates for levenshtein
             @$article_token =
               map {
-                 my $c = uniq @{[/ [ (??{ quotemeta($token) }) ] /gxx]};
+                 my $c = uniq @{[/ [ (??{ quotemeta($token) }) ]* /gxx]};
                  max(length() - $c, length($token) - $c) < $configs->{edit_distance} ? $_ : ()
               } @$article_token
               if $configs->{leven_preselect};
 
-            my $f = (sort { $a->[1] <=> $b->[1] } map { [$_, $levenshtein->($_, $token)] } @$articl_token)[0][0];
+            my $f = (sort { $a->[1] <=> $b->[1] } map { [$_, $levenshtein->($_, $token)] } @$article_token)[0][0];
 
             if ($f and $f <= $configs->{edit_distance}) {
                $score++;
@@ -148,6 +148,12 @@ sub search_article {
 
 sub get_price {
    my ($self, $unit) = @_;
+
+   # ...
+}
+
+sub nfkd_normalize {
+   my ($self, $unicode_string) = @_;
 
    # ...
 }
