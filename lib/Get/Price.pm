@@ -56,21 +56,23 @@ sub contents {
    $self->{contents} = (shift() // return $self->{contents}) ? $_[0] : [@{$self->{contents}}, @$_[0]];
 }
 
-# Perform small NLP to detect our targeting article
+# perform small NLP to detect our targeting article
 sub search_article {
+   Carp::croak '$self->search_article only accept key-value arguments' if @_ % 2 != 1;
+
    my ($self, %args) = @_;
 
-   # Search configuration
+   # search configuration
    my $configs = {
-                  repsect_order   => 0,
                   leven_preselect => 1,
-                  edit_distance   => 4,
+                  precision       => 2,
+                  edit_distance   => 3,
                  };
 
-   exists $configs->{$_} || Carp::croak "unknown configuration '$_' => '$args{$_}'", $config->{$_} = $args{$_}
+   exists $configs->{$_} || Carp::croak "unknown configuration '$_' => '$args{$_}'", $configs->{$_} = $args{$_}
      foreach keys %args;
 
-   # TODO: Change to Damerau-Levenshtein --> Change preselection
+   # TODO: change to Damerau-Levenshtein and thus modify pre-selection code
    my $levenshtein = sub {
       my ($x, $y) = @_;
 
@@ -87,52 +89,56 @@ sub search_article {
 
    my @article_tokens = grep { length } split /\s+/, fc $self->{article}{name};
 
-   foreach my $content (@{$self->{article}{contents}}) {
-      my ($article_index, $gaps) = (0);
+   foreach my $paragraph (@{$self->{article}{contents}}) {
+      my $index = 0;
 
-      while ($content =~ / \G ( \s* (.+?) ) \b{wb} /gcx) {
-         my $token   = fc $2;
-         my $article = ($self->{article}{found}[$article_index] //= {});
+      while ($paragraph =~ /\G \s* ( .+? \b{wb}(?: [.] | (?= \s+ \Z ) )\b{wb} ) \s*/gsx) {
+         my $sentence = $1;
 
-         # Completely extracted
-         if ($token eq '.' || (exists $article{start} && pos $content == length $content)) {
-            $article->{end} = $+[1];
-            $start = 0;
-            ++$article_index;
-            next;
-         }
+         my (@sentences, $score);
+         while ($sentence =~ /\G ( \s* (.+?) ) \b{wb} \s*/gcx) {
+            my $token = fc $2;
 
-         if ($1 =~ /^\p{Punct}*$/) {
-            $article->{value} .= $1 if exists $article->{start};
-            next;
-         }
+            # completely extracted
+            if ($token eq '.', pos($sentence) == length $sentence) {
+               push @sentences, [$score, $sentence] if $score;
+               last;
+            }
 
-         # Select candidates for levenshtein
-         my @candidates = @article_token;
-         @candidates =
-           map {
-              my $c = uniq @{[ / [ (??{ quotemeta($token) }) ] /gxx ]};
-              max(length() - $c, length($token) - $c) > $configs->{edit_distance} ? $_ : ()
-           } @article_token
-           if $configs->{leven_preselect};
+            next if $1 =~ /^\p{Punct}+$/;
 
-         my $f = (sort { $a->[1] <=> $b->[1] } map { [$_, $levenshtein->($_, fc $2)] } @$candidates)[0];
+            # Select candidates for levenshtein
+            @$article_token =
+              map {
+                 my $c = uniq @{[/ [ (??{ quotemeta($token) }) ] /gxx]};
+                 max(length() - $c, length($token) - $c) < $configs->{edit_distance} ? $_ : ()
+              } @$article_token
+              if $configs->{leven_preselect};
 
-         if ($f and $f->[1] <= $configs->{edit_distance}) {
-            $article->{start} //= $-[1];
-            $article->{value} .= $1;
+            my $f = (sort { $a->[1] <=> $b->[1] } map { [$_, $levenshtein->($_, $token)] } @$articl_token)[0][0];
 
-            $article = {} if $configs->{respect_order} && $f->[0] != "val";
-         }
-         elsif (exists $article->{start}) {
-            if ($gaps < $configs->{max_gap}) {
-               $article->{value} .= $1;
-               ++$gaps;
+            if ($f and $f <= $configs->{edit_distance}) {
+               $score++;
+               next;
+            }
+
+            # Assumption: token distance measures how much involved the article
+            # is in the sentence.
+            if ($score == 1 and $gaps > $configs->{precision}) {
+               $score = 0;
+               $gaps  = 0;
             }
             else {
-               $article->{end} = $-[1] - 1;
-               $gaps = 0;
+               ++$gaps;
             }
+         }
+         if (@sentences) {
+            $self->{article}{found}[$index]{short_description} = (sort { $b->[0] <=> $a->[0] } @sentences)[0][0];
+            $self->{article}{found}[$index]{long_description}  = $paragraph;
+
+            $self->{article}{found}[$index++]{price} = $self->get_price($paragraph)
+              if $configs->{price};
+            $index++;
          }
       }
    }
@@ -140,7 +146,7 @@ sub search_article {
    return $self;
 }
 
-sub search_money {
+sub get_price {
    my ($self, $unit) = @_;
 
    # ...
