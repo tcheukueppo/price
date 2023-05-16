@@ -85,9 +85,9 @@ sub _jaro {
       my $end   = min($i + $match_distance, $#t);
 
       foreach my $j ($start .. $end) {
-         next if $t_matches[$j] or $s[$i] ne $t[$i];
-         $s_matches[$i] = $t_matches[$j] = 0;
-         $matches++;
+         next if $t_matches[$j] or $s[$i] ne $t[$j];
+         $s_matches[$i] = $t_matches[$j] = 1;
+         $n_matches++;
          last;
       }
    }
@@ -99,19 +99,33 @@ sub _jaro {
    foreach my $i (0 .. $#s) {
       $s_matches[$i] or next;
       ++$k until $t_matches[$k];
-      $s[$i] eq $t[$k] or ++$trans;
+      $s[$i] eq $t[$k] or ++$transposition;
       ++$k;
    }
 
    # return the probability match
-   (($n_matches / $s_len) + ($n_matches / $t_len) + (1 - $trans / (2 * $matches))) / 3
+   (($n_matches / $s_len) + ($n_matches / $t_len) + (1 - $transposition / (2 * $n_matches))) / 3;
+}
+
+sub _jaro_winkler {
+   my ($s, $t) = @_;
+
+   my $prefix = 0;
+   foreach my $i (0 .. min(3, length($s), length($t))) {
+     substr($s, $i, 1) eq substr($t, $i, 1) ? $prefix++ : last
+   }
+
+   my $distance = _jaro($s, $t);
+   my $k = $distance + $prefix * 0.1 * (1 - $distance);
+   print("$s => $t, $k, $prefix\n");
+   return $k;
 }
 
 sub _nfkd_normalize {
    my ($ascii_string, $impurities);
+   $ascii_string = join '', map { $impurities += int(length() / 2); substr($_, 0, 1) } map { NFKD($_) } split //, $_[0];
 
-   $ascii_string = join '', map { $impurities += length - 1; substr($_, 1, 0) } map { NKFD($_) } split //, $_[0];
-   return [$impurities, $ascii_string];
+   ($ascii_string, $impurities);
 }
 
 # Perform mediocre NLP to detect our targeting article
@@ -122,14 +136,14 @@ sub search_article {
 
    # Search configuration
    my $configs = {
-                  precision => 2,
-                  jaro      => 3,
+                  precision     => 2,
+                  jaro          => 0.2,
+                  str_normalize => 1,
+                  price         => 0,
                  };
 
    exists $configs->{$_} || Carp::croak("unknown configuration '$_' => '$args{$_}'"), $configs->{$_} = $args{$_}
      foreach keys %args;
-
-   $self->{article}{F} //= [];
 
    my @tokens = grep { length } split /\s+/, fc $self->{article}{name};
 
@@ -139,30 +153,46 @@ sub search_article {
       while ($paragraph =~ /\G \s* ( .+? \b{wb}(?: [.] | (?= \s+ \Z ) )\b{wb} ) \s*/gsx) {
 
          my $sentence = $1;
-         my $description;
-         my ($score, $gaps) = (0, 0);
+         my @description;
+
+         # Parameters for selection
+         my ($score, $impure, $gaps, $total_jaro) = (0, 0, 0, 0);
 
          while ($sentence =~ /\G \s* (.+?) \b{wb} \s*/gcsx) {
+
             my $token = fc $1;
 
             # Completely extracted
             if ($token eq '.' || pos($sentence) == length $sentence) {
-               $description = [$score, $sentence]
-                 if ($score == @tokens) || $score > 1 and !defined($description) || $description->[0] < $score;
+               push @description,
+                 {
+                  short  => $sentence,
+                  score  => $score,
+                  impure => $impure,
+                  jaro   => $total_jaro,
+                 }
+                 if $score;
                last;
             }
 
             # Punctuation chars
             next if $token =~ /^\p{Punct}+$/;
 
-            my $f = (sort { $b->[1] <=> $a->[1] } map { [$_, _jaro($_, $token)] } @tokens)[0];
-            if ($f and $f->[1] <= $configs->{jaro}) {
-               #say "success with: @$f, $token";
+            my $matched;
+            my $impure_value = 0;
+
+            ($token, $impure_value) = _nfkd_normalize($token) if $configs->{str_normalize};
+
+            $matched = (sort { $b->[1] <=> $a->[1] } map { [$_, _jaro_winkler($_, $token)] } @tokens)[0];
+            if ($matched and $matched->[1] <= $configs->{jaro}) {
                $score++;
+               $total_jaro += $matched->[1];
+               $impure     += $impure_value;
                next;
             }
 
             # Dist btw tokens measures how much involved the article is in the sentence.
+            #if (0) {
             if ($gaps > $configs->{precision} and defined($score) and $score == 1) {
                $score = 0;
                $gaps  = 0;
@@ -172,9 +202,13 @@ sub search_article {
             }
          }
 
-         if ($description) {
-            $self->{article}{F}[$index]{short} = $description;
-            $self->{article}{F}[$index++]{long} = $paragraph;
+         # Pick the best description
+         if (@description) {
+            $self->{article}{F}[$index++] = 
+              (sort { $b->{score} <=> $a->{score} || $a->{impure} <=> $b->{impure} || $a->{jaro} <=> $b->{jaro} } @description)
+              [0];
+
+            $self->{article}{F}[$index]{long} = $paragraph;
          }
       }
    }
@@ -183,7 +217,7 @@ sub search_article {
       $_->{price} = $self->get_price($_) foreach @{$self->{article}{F}};
    }
 
-   return @{$self->{article}{F}};
+   return $self->{article}{F};
 }
 
 sub get_price {

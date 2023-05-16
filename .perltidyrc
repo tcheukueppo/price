@@ -1,26 +1,31 @@
 --iterations=2
 
+--want-break-after="% + - * / x != == >= <= =~ !~ < >  | & = **= += *= &= <<= &&= -= /= |= >>= ||= //= .= %= ^= x="
+--want-break-before=". << >> -> && || //"
+
 --character-encoding=utf8
 
 --blank-lines-before-packages=0
 --blanks-before-blocks
 --blanks-before-subs
 --blanks-before-comments
---keep-old-blank-lines=1
-
---force-read-binary
---backup-and-modify-in-place
---preserve-line-endings
 
 --brace-tightness=2
 --paren-tightness=2
 --square-bracket-tightness=2
 --block-brace-vertical-tightness=0
+
+--force-read-binary
+--backup-and-modify-in-place
+--preserve-line-endings
+
 --opening-brace-always-on-right
 --closing-token-indentation=1
 --line-up-parentheses
 --continuation-indentation=2
 --extended-continuation-indentation
 --add-newlines
+
 --indent-columns=3
+
 --maximum-line-length=127
