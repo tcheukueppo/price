@@ -10,7 +10,7 @@ use List::Util qw(min max reduce sum);
 
 use Data::Dumper;
 
-# regex for matching prices in different units
+# Regex for matching prices in different units
 my $PRICE_RE = qr/
    (?<i> (?&FLOAT) ) (?<u> (?&UNIT) )?
    (?&PAD) (?<r> (?&RANGE) ) (?&PAD)
@@ -59,6 +59,48 @@ sub rm_contents {
    delete $_[0]->{contents};
 }
 
+# Compute jaro similarity btw two strings
+sub _jaro {
+   my ($s, $t) = @_;
+
+   my ($s_len, $t_len) = (length $s, length $t);
+
+   my (@s_matches, @t_matches);
+   my @s = (split //, $s);
+   my @t = (split //, $t);
+
+   my $match_distance = (max($s_len, $t_len) / 2) - 1;
+
+   # Find number of matches based on $match_distance condition
+   my $n_matches = 0;
+   foreach my $i (0 .. $#s) {
+
+      my $start = max(0, $i - $match_distance);
+      my $end   = min($i + $match_distance, $#t)
+
+      foreach my $j ($start .. $end) {
+         next if $t_matches[$j] or $s[$i] ne $t[$i];
+         $s_matches[$i] = $t_matches[$j] = 0;
+         $matches++;
+         last;
+      }
+   }
+
+   return 0 unless $n_matches;
+
+   # Find number of transpositions
+   my ($k, $transposition) = (0, 0);
+   foreach my $i (0 .. $#s) {
+      $s_matches[$i] or next;
+      ++$k until $t_matches[$k];
+      $s[$i] eq $t[$k] or ++$trans;
+      ++$k;
+   }
+
+   # return the probability match
+   (($n_matches / $s_len) + ($n_matches / $t_len) + (1 - $trans / (2 * $matches))) / 3
+}
+
 # Perform small NLP to detect our targeting article
 sub search_article {
    Carp::croak '$self->search_article only accept key-value arguments' if @_ % 2 != 1;
@@ -72,14 +114,14 @@ sub search_article {
                   edit_distance   => 3,
                  };
 
-   exists $configs->{$_} || Carp::croak "unknown configuration '$_' => '$args{$_}'", $configs->{$_} = $args{$_}
+   exists $configs->{$_} || Carp::croak("unknown configuration '$_' => '$args{$_}'"), $configs->{$_} = $args{$_}
      foreach keys %args;
 
    # TODO: change to Damerau-Levenshtein and thus modify pre-selection code
    my $levenshtein = sub {
       my ($x, $y) = @_;
 
-      return length($x || $y) unless $y ? $x : $y;
+      return length($x || $y) unless ($y ? $x : $y);
 
       my ($_x, $_y) = (substr($x, 1), substr($y, 1));
 
@@ -132,6 +174,7 @@ sub search_article {
 
             my $f = (sort { $a->[1] <=> $b->[1] } map { [$_, $levenshtein->($_, $token)] } @$candidates)[0];
             if ($f and $f->[1] <= $configs->{edit_distance}) {
+               #say "success with: @$f, $token";
                $score++;
                next;
             }
