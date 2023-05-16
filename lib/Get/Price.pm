@@ -6,7 +6,7 @@ use feature qw(current_sub fc say);
 
 use Carp;
 use Memoize;
-use List::Util qw(min max reduce);
+use List::Util qw(min max reduce sum);
 
 use Data::Dumper;
 
@@ -79,7 +79,7 @@ sub search_article {
    my $levenshtein = sub {
       my ($x, $y) = @_;
 
-      return length($x || $y) unless $y || $x;
+      return length($x || $y) unless $y ? $x : $y;
 
       my ($_x, $_y) = (substr($x, 1), substr($y, 1));
 
@@ -100,14 +100,16 @@ sub search_article {
       while ($paragraph =~ /\G \s* ( .+? \b{wb}(?: [.] | (?= \s+ \Z ) )\b{wb} ) \s*/gsx) {
 
          my $sentence = $1;
-         my ($description, $score, $gaps);
+         my $description;
+         my ($score, $gaps) = (0, 0);
 
          while ($sentence =~ /\G \s* (.+?) \b{wb} \s*/gcsx) {
             my $token = fc $1;
 
             # Completely extracted
             if ($token eq '.' || pos($sentence) == length $sentence) {
-               $description = [$score, $sentence] if $score and !defined($description) or $description->[0] < $score;
+               $description = [$score, $sentence]
+                 if ($score == @tokens) || $score > 1 and !defined($description) || $description->[0] < $score;
                last;
             }
 
@@ -117,11 +119,11 @@ sub search_article {
             my $candidates;
 
             if ($configs->{leven_preselect}) {
-               my $reduce = $token;
+               my $token = $token;
 
-               foreach my $token (@tokens) {
-                  my $c = reduce { length($reduce) == ($reduce =~ s/\Q$b\E//) ? $a : ++$a } 0, split //, $token;
-                  push @$candidates, $token if max(length() - $c, length($token) - $c) < $configs->{edit_distance};
+               foreach my $a_token (@tokens) {
+                  my $c = sum map { $token =~ s/\Q$_\E// } split //, $a_token;
+                  push @$candidates, $a_token if max(length($a_token) - $c, length($token) - $c) < $configs->{edit_distance};
                }
             }
             else {
@@ -129,14 +131,14 @@ sub search_article {
             }
 
             my $f = (sort { $a->[1] <=> $b->[1] } map { [$_, $levenshtein->($_, $token)] } @$candidates)[0];
-            if ($f and $f->[0] <= $configs->{edit_distance}) {
+            if ($f and $f->[1] <= $configs->{edit_distance}) {
                $score++;
                next;
             }
 
             # Distance btw tokens measures how much involved the article name
             # is in the sentence.
-            if ($score == 1 and $gaps > $configs->{precision}) {
+            if ($gaps > $configs->{precision} and defined($score) and $score == 1) {
                $score = 0;
                $gaps  = 0;
             }
@@ -146,7 +148,7 @@ sub search_article {
          }
 
          if ($description) {
-            $self->{article}{F}[$index]{short}  = $description;
+            $self->{article}{F}[$index]{short} = $description;
             $self->{article}{F}[$index++]{long} = $paragraph;
          }
       }
