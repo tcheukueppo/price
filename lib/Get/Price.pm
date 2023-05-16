@@ -2,11 +2,14 @@ package Get::Price;
 
 use strict;
 use warnings;
+use utf8;
 use feature qw(current_sub fc say);
 
+no warnings 'utf8';
+
 use Carp;
-use Memoize;
 use List::Util qw(min max reduce sum);
+use Unicode::Normalize;
 
 use Data::Dumper;
 
@@ -35,7 +38,7 @@ my $PRICE_RE = qr/
          # more units
       )
    )
-/x;
+/;
 
 sub new {
    bless {
@@ -45,6 +48,9 @@ sub new {
      $_[0];
 }
 
+#
+## Accessors
+#
 sub article {
    $_[0]->{article}{name} = $_[1] // return $_[0]->{article}{name};
    return $_[0];
@@ -76,7 +82,7 @@ sub _jaro {
    foreach my $i (0 .. $#s) {
 
       my $start = max(0, $i - $match_distance);
-      my $end   = min($i + $match_distance, $#t)
+      my $end   = min($i + $match_distance, $#t);
 
       foreach my $j ($start .. $end) {
          next if $t_matches[$j] or $s[$i] ne $t[$i];
@@ -101,7 +107,14 @@ sub _jaro {
    (($n_matches / $s_len) + ($n_matches / $t_len) + (1 - $trans / (2 * $matches))) / 3
 }
 
-# Perform small NLP to detect our targeting article
+sub _nfkd_normalize {
+   my ($ascii_string, $impurities);
+
+   $ascii_string = join '', map { $impurities += length - 1; substr($_, 1, 0) } map { NKFD($_) } split //, $_[0];
+   return [$impurities, $ascii_string];
+}
+
+# Perform mediocre NLP to detect our targeting article
 sub search_article {
    Carp::croak '$self->search_article only accept key-value arguments' if @_ % 2 != 1;
 
@@ -109,28 +122,12 @@ sub search_article {
 
    # Search configuration
    my $configs = {
-                  leven_preselect => 1,
-                  precision       => 2,
-                  edit_distance   => 3,
+                  precision => 2,
+                  jaro      => 3,
                  };
 
    exists $configs->{$_} || Carp::croak("unknown configuration '$_' => '$args{$_}'"), $configs->{$_} = $args{$_}
      foreach keys %args;
-
-   # TODO: change to Damerau-Levenshtein and thus modify pre-selection code
-   my $levenshtein = sub {
-      my ($x, $y) = @_;
-
-      return length($x || $y) unless ($y ? $x : $y);
-
-      my ($_x, $_y) = (substr($x, 1), substr($y, 1));
-
-      substr($x, 1, 0) eq substr($y, 1, 0)
-        ? __SUB__->($_x, $_y)
-        : 1 + min(__SUB__->($_x, $_y), __SUB__->($x, $_y), __SUB__->($_x, $y));
-   };
-
-   memoize($levenshtein);    # DP!
 
    $self->{article}{F} //= [];
 
@@ -155,32 +152,17 @@ sub search_article {
                last;
             }
 
+            # Punctuation chars
             next if $token =~ /^\p{Punct}+$/;
 
-            # Select candidates for levenshtein
-            my $candidates;
-
-            if ($configs->{leven_preselect}) {
-               my $token = $token;
-
-               foreach my $a_token (@tokens) {
-                  my $c = sum map { $token =~ s/\Q$_\E// } split //, $a_token;
-                  push @$candidates, $a_token if max(length($a_token) - $c, length($token) - $c) < $configs->{edit_distance};
-               }
-            }
-            else {
-               $candidates = \@tokens;
-            }
-
-            my $f = (sort { $a->[1] <=> $b->[1] } map { [$_, $levenshtein->($_, $token)] } @$candidates)[0];
-            if ($f and $f->[1] <= $configs->{edit_distance}) {
+            my $f = (sort { $b->[1] <=> $a->[1] } map { [$_, _jaro($_, $token)] } @tokens)[0];
+            if ($f and $f->[1] <= $configs->{jaro}) {
                #say "success with: @$f, $token";
                $score++;
                next;
             }
 
-            # Distance btw tokens measures how much involved the article name
-            # is in the sentence.
+            # Dist btw tokens measures how much involved the article is in the sentence.
             if ($gaps > $configs->{precision} and defined($score) and $score == 1) {
                $score = 0;
                $gaps  = 0;
@@ -207,12 +189,6 @@ sub search_article {
 sub get_price {
    my ($self, $article) = @_;
 
-}
-
-sub nfkd_normalize {
-   my ($self, $unicode_string) = @_;
-
-   # ...
 }
 
 =encoding utf8
