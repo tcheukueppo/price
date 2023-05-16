@@ -7,34 +7,34 @@ use Test::Fatal;
 use lib './t/utils';
 use Util;
 
-BEGIN {
-   use_ok('lib', './t/utils') or diag("could not add local lib dir");
-   use_ok('Util')             or diag('where is Util?');
-   use_ok('Get::Price')       or diag('Where is Get::Price?');
-}
+#BEGIN {
+#   use_ok('lib', './t/utils') or diag("could not add local lib dir");
+#   use_ok('Util')             or diag('where is Util?');
+#   use_ok('Get::Price')       or diag('Where is Get::Price?');
+#}
 
 my $av = Util::ReadText('./t/contents/fruits.co') or diag('invalid content format?');
 
-my %product_expect = ();
+#my %expected = (
+#   article_name => [
+#      1 => []
+#   ]
+#);
 
-like exception { Get::Price->new(undef, undef, UNKNOWN_CONFIG => 'what?') }, qr/^unknown configuration/, 'invalid configs';
-
-my $test_product = sub {
-   plan tests => 2;
-
+my $test_article = sub {
    my $article = shift;
-   my $price   = new_ok('Get::Price' => [$article, undef, MAX_OCCURENCE_PERC => 100]);
+   my $price   = new_ok('Get::Price' => [$article]);
 
-   # working on content
+   #like exception { Get::Price->search_article(unknown => 'unknown') }, qr//, 'invalid config args';
    foreach my $content (keys $av->{$article}->@*) {
-      $price->{content} = $content;
+      $price->{contents} = $content;
 
-      # more tests based on content
+      is_deeply($price->search_article(precision => 3, edit_distance => 4), $expected{$article};
    }
 };
 
-foreach my $product (keys %product_expect) {
-   subtest "testing product '$product'" => $test_product, $product unless exists $av->{$product};
+foreach my $article (keys %expected) {
+   subtest "testing product '$article'" => $test_article, $product unless exists $av->{$product};
 }
 
 done_testing();

@@ -2,11 +2,13 @@ package Get::Price;
 
 use strict;
 use warnings;
-use feature qw(current_sub fc);
+use feature qw(current_sub fc say);
 
 use Carp;
 use Memoize;
-use List::Util qw(min max uniq);
+use List::Util qw(min max reduce);
+
+use Data::Dumper;
 
 # regex for matching prices in different units
 my $PRICE_RE = qr/
@@ -36,33 +38,34 @@ my $PRICE_RE = qr/
 /x;
 
 sub new {
-   my ($class, $article, $contents) = @_;
-
-   my $self = bless {
-                     contents => $contents,
-                     article  => {name => $article},
-                    }, $class;
-
-   return $self->get_article_regex;
+   bless {
+          contents => $_[2],
+          article  => {name => $_[1]},
+         },
+     $_[0];
 }
 
 sub article {
    $_[0]->{article}{name} = $_[1] // return $_[0]->{article}{name};
-   return $_[0]->get_article_regex;
+   return $_[0];
 }
 
 sub contents {
-   my $self = shift;
-   $self->{contents} = (shift() // return $self->{contents}) ? $_[0] : [@{$self->{contents}}, @$_[0]];
+   $_[1] ? push @{$_[0]->{contents}}, @{$_[1]} : return @{$_[0]->{contents}};
+   return $_[0];
 }
 
-# perform small NLP to detect our targeting article
+sub rm_contents {
+   delete $_[0]->{contents};
+}
+
+# Perform small NLP to detect our targeting article
 sub search_article {
    Carp::croak '$self->search_article only accept key-value arguments' if @_ % 2 != 1;
 
    my ($self, %args) = @_;
 
-   # search configuration
+   # Search configuration
    my $configs = {
                   leven_preselect => 1,
                   precision       => 2,
@@ -87,69 +90,78 @@ sub search_article {
 
    memoize($levenshtein);    # DP!
 
-   my $article_token = [ grep { length } split /\s+/, fc $self->{article}{name} ];
+   $self->{article}{F} //= [];
 
-   foreach my $paragraph (@{$self->{article}{contents}}) {
+   my @tokens = grep { length } split /\s+/, fc $self->{article}{name};
+
+   foreach my $paragraph (@{$self->{contents}}) {
       my $index = 0;
 
       while ($paragraph =~ /\G \s* ( .+? \b{wb}(?: [.] | (?= \s+ \Z ) )\b{wb} ) \s*/gsx) {
-         my $sentence= $1;
 
-         my (@sentences, $score, $gaps);
-         while ($sentence =~ /\G \s* (.+?) \b{wb} \s*/gcx) {
+         my $sentence = $1;
+         my ($description, $score, $gaps);
+
+         while ($sentence =~ /\G \s* (.+?) \b{wb} \s*/gcsx) {
             my $token = fc $1;
 
-            # completely extracted
+            # Completely extracted
             if ($token eq '.' || pos($sentence) == length $sentence) {
-               push @sentences, [$score, $sentence] if $score;
+               $description = [$score, $sentence] if $score and !defined($description) or $description->[0] < $score;
                last;
             }
 
             next if $token =~ /^\p{Punct}+$/;
 
             # Select candidates for levenshtein
-            @$article_token =
-              map {
-                 my $c = uniq @{[/ [ (??{ quotemeta($token) }) ]* /gxx]};
-                 max(length() - $c, length($token) - $c) < $configs->{edit_distance} ? $_ : ()
-              } @$article_token
-              if $configs->{leven_preselect};
+            my $candidates;
 
-            my $f = (sort { $a->[1] <=> $b->[1] } map { [$_, $levenshtein->($_, $token)] } @$article_token)[0][0];
+            if ($configs->{leven_preselect}) {
+               my $reduce = $token;
 
-            if ($f and $f <= $configs->{edit_distance}) {
+               foreach my $token (@tokens) {
+                  my $c = reduce { length($reduce) == ($reduce =~ s/\Q$b\E//) ? $a : ++$a } 0, split //, $token;
+                  push @$candidates, $token if max(length() - $c, length($token) - $c) < $configs->{edit_distance};
+               }
+            }
+            else {
+               $candidates = \@tokens;
+            }
+
+            my $f = (sort { $a->[1] <=> $b->[1] } map { [$_, $levenshtein->($_, $token)] } @$candidates)[0];
+            if ($f and $f->[0] <= $configs->{edit_distance}) {
                $score++;
                next;
             }
 
-            # Assumption: token distance measures how much involved the article
+            # Distance btw tokens measures how much involved the article name
             # is in the sentence.
             if ($score == 1 and $gaps > $configs->{precision}) {
                $score = 0;
                $gaps  = 0;
             }
             else {
-               ++$gaps;
+               $gaps++;
             }
          }
-         if (@sentences) {
-            $self->{article}{found}[$index]{short_description} = (sort { $b->[0] <=> $a->[0] } @sentences)[0][0];
-            $self->{article}{found}[$index]{long_description}  = $paragraph;
 
-            $self->{article}{found}[$index++]{price} = $self->get_price($paragraph)
-              if $configs->{price};
-            $index++;
+         if ($description) {
+            $self->{article}{F}[$index]{short}  = $description;
+            $self->{article}{F}[$index++]{long} = $paragraph;
          }
       }
    }
 
-   return $self;
+   if ($configs->{price}) {
+      $_->{price} = $self->get_price($_) foreach @{$self->{article}{F}};
+   }
+
+   return @{$self->{article}{F}};
 }
 
 sub get_price {
-   my ($self, $unit) = @_;
+   my ($self, $article) = @_;
 
-   # ...
 }
 
 sub nfkd_normalize {
