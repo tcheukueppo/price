@@ -8,37 +8,35 @@ use feature qw(current_sub fc say);
 no warnings 'utf8';
 
 use Carp;
-use List::Util qw(min max reduce sum);
+use List::Util qw(min max sum);
 use Unicode::Normalize;
 
 use Data::Dumper;
 
 # Regex for matching prices in different units
 my $PRICE_RE = qr/
-   (?<i> (?&FLOAT) ) (?<u> (?&UNIT) )?
-   (?&PAD) (?<r> (?&RANGE) ) (?&PAD)
-   (?(<r>)
-      (?<ii> (?&FLOAT) )?
-      (?(<ii>)
-         (?<u> (?&UNIT) )?
-      )
+   (?:
+        (?<u>(?&FRONT_UNIT))(?<m>(?&MONEY))\s+(?:-\s*\g{u}(?<m>(?&MONEY)))
+      | (?<m>(?&MONEY))(?<u>(?&BACK_UNIT))\s+(?:-\s*((?&MONEY)))\g{u}
    )
    (?(DEFINE)
-      (?<FLOAT> \d+ (?: [.,] \d+ )? )
-      (?<PAD> \s* )
-      (?<RANGE> [-] )
+      (?<MONEY> \d+ (?: [.,] \d+ )? )
 
+      # define units here
       (?<DOLLAR> $ | &dollar; | (?i: dollar(?:s)? ) )
       (?<EURO> € | &euro; | (?i: euro(?:s)? ) )
-      # define units here
 
-      (?<UNIT>
-           (?&DOLLAR) 
-         | (?&EURO)
-         # more units
+      # add more units here
+      (?<FRONT_UNIT>
+         (?&DOLLAR) 
+      )
+      (?<BACK_UNIT>
+         (?&EURO)
       )
    )
-/;
+/x;
+
+my $NUMERIC = qr/([^-+\d]*) ( [-+]? (?:\d+(?: [.]\d* )?|[.]\d+) ) [eE] ( [-+]? (?:\d+) ) (.*)/x;
 
 sub new {
    bless {
@@ -112,18 +110,16 @@ sub _jaro_winkler {
 
    my $prefix = 0;
    foreach my $i (0 .. min(3, length($s), length($t))) {
-     substr($s, $i, 1) eq substr($t, $i, 1) ? $prefix++ : last
+      substr($s, $i, 1) eq substr($t, $i, 1) ? $prefix++ : last;
    }
 
    my $distance = _jaro($s, $t);
-   my $k = $distance + $prefix * 0.1 * (1 - $distance);
-   print("$s => $t, $k, $prefix\n");
-   return $k;
+   $distance + $prefix * 0.1 * (1 - $distance);
 }
 
 sub _nfkd_normalize {
-   my ($ascii_string, $impurities);
-   $ascii_string = join '', map { $impurities += int(length() / 2); substr($_, 0, 1) } map { NFKD($_) } split //, $_[0];
+   my $impurities;
+   my $ascii_string = join '', map { $impurities += int(length() / 2); substr($_, 0, 1) } map { NFKD($_) } split //, $_[0];
 
    ($ascii_string, $impurities);
 }
@@ -136,10 +132,11 @@ sub search_article {
 
    # Search configuration
    my $configs = {
-                  precision     => 2,
-                  jaro          => 0.2,
-                  str_normalize => 1,
-                  price         => 0,
+                  precision       => 2,
+                  jaro            => 0.8,
+                  str_normalize   => 1,
+                  price           => 0,
+                  digit_precision => 0.2,
                  };
 
    exists $configs->{$_} || Carp::croak("unknown configuration '$_' => '$args{$_}'"), $configs->{$_} = $args{$_}
@@ -150,16 +147,14 @@ sub search_article {
    foreach my $paragraph (@{$self->{contents}}) {
       my $index = 0;
 
-      while ($paragraph =~ /\G \s* ( .+? \b{wb}(?: [.] | (?= \s+ \Z ) )\b{wb} ) \s*/gsx) {
-
+      while ($paragraph =~ /\G \s* (.+?\b{wb}(?:[.]|(?=\s+\Z))\b{wb}) \s*/gsx) {
          my $sentence = $1;
          my @description;
 
          # Parameters for selection
          my ($score, $impure, $gaps, $total_jaro) = (0, 0, 0, 0);
 
-         while ($sentence =~ /\G \s* (.+?) \b{wb} \s*/gcsx) {
-
+       TOKEN: while ($sentence =~ /\G \s* (.+?)\b{wb} \s*/gcsx) {
             my $token = fc $1;
 
             # Completely extracted
@@ -178,13 +173,32 @@ sub search_article {
             # Punctuation chars
             next if $token =~ /^\p{Punct}+$/;
 
+            # Token is a numerical value and is treated based on unit
+            # of measurement and approximation
+            if ($token =~ /([^-+\d]*)$NUMERIC(.*)/) {
+               my ($start_unit, $value, $exp, $end_unit) = (fc $1 // '', $2, $3, fc $4 // '');
+
+               foreach my $a_token (@token) {
+                  if ($a_token =~ /([^-+\d]*)$NUMERIC(.*)/) {
+                     my ($a_start_unit, $a_value, $a_exp, $a_end_unit) = (fc $1 // '', $2, $3, fc $4 // '');
+
+                     $end_unit eq $a_end_unit     or next;
+                     $start_unit eq $a_start_unit or next;
+                     $exp =~ s/^\+//r ne $a_exp =~ s/^\+//r and next;
+
+                     $score++, last if abs($value - $a_value) <= $configs->{digit_precision};
+                  }
+               }
+               next;
+            }
+
             my $matched;
             my $impure_value = 0;
 
             ($token, $impure_value) = _nfkd_normalize($token) if $configs->{str_normalize};
 
             $matched = (sort { $b->[1] <=> $a->[1] } map { [$_, _jaro_winkler($_, $token)] } @tokens)[0];
-            if ($matched and $matched->[1] <= $configs->{jaro}) {
+            if ($matched and $matched->[1] >= $configs->{jaro}) {
                $score++;
                $total_jaro += $matched->[1];
                $impure     += $impure_value;
@@ -204,11 +218,11 @@ sub search_article {
 
          # Pick the best description
          if (@description) {
-            $self->{article}{F}[$index++] = 
+            $self->{article}{F}[$index] =
               (sort { $b->{score} <=> $a->{score} || $a->{impure} <=> $b->{impure} || $a->{jaro} <=> $b->{jaro} } @description)
               [0];
 
-            $self->{article}{F}[$index]{long} = $paragraph;
+            $self->{article}{F}[$index++]{long} = $paragraph;
          }
       }
    }
