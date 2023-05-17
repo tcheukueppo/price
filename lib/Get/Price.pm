@@ -36,7 +36,7 @@ my $PRICE_RE = qr/
    )
 /x;
 
-my $NUMERIC = qr/([^-+\d]*) ( [-+]? (?:\d+(?: [.]\d* )?|[.]\d+) ) [eE] ( [-+]? (?:\d+) ) (.*)/x;
+my $NUMERIC = qr/([^-+\d]*) ( [-+]? (?:\d+(?: [.]\d* )?|[.]\d+) ) (?: :[eE] ([-+]? (?:\d+)) )? (.*)/x;
 
 sub new {
    bless {
@@ -175,12 +175,12 @@ sub search_article {
 
             # Token is a numerical value and is treated based on unit
             # of measurement and approximation
-            if ($token =~ /([^-+\d]*)$NUMERIC(.*)/) {
-               my ($start_unit, $value, $exp, $end_unit) = (fc $1 // '', $2, $3, fc $4 // '');
+            if ($token =~ $NUMERIC) {
+               my ($start_unit, $value, $exp, $end_unit) = (fc $1 // '', $2, $3 // '', fc $4 // '');
 
-               foreach my $a_token (@token) {
-                  if ($a_token =~ /([^-+\d]*)$NUMERIC(.*)/) {
-                     my ($a_start_unit, $a_value, $a_exp, $a_end_unit) = (fc $1 // '', $2, $3, fc $4 // '');
+               foreach my $a_token (@tokens) {
+                  if ($a_token =~ $NUMERIC) {
+                     my ($a_start_unit, $a_value, $a_exp, $a_end_unit) = (fc $1 // '', $2, $3 // '', fc $4 // '');
 
                      $end_unit eq $a_end_unit     or next;
                      $start_unit eq $a_start_unit or next;
