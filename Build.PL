@@ -5,10 +5,10 @@ use Module::Build;
 Module::Build->VERSION('0.4004');
 
 my $builder = Module::Build->new(
-    module_name         => 'Get::Price',
+    module_name         => 'Get::Article',
     license             => 'gpl_3',
     dist_author         => q{Kueppo Tcheukam <tcheukueppo@tutanota.com>},
-    dist_version_from   => 'lib/Get/Price.pm',
+    dist_version_from   => 'lib/Get/Article.pm',
     release_status      => 'stable',
     configure_requires => {
         'Module::Build' => '0.4004',
@@ -20,7 +20,7 @@ my $builder = Module::Build->new(
         #'ABC'              => '1.6',
         #'Foo::Bar::Module' => '5.0401',
     },
-    add_to_cleanup     => [ 'Get-Price-*' ],
+    add_to_cleanup     => [ 'Get-Article-*' ],
 );
 
 $builder->create_build_script();
