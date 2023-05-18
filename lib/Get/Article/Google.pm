@@ -1,34 +1,71 @@
-package Article::Google;
+package Get::Article::Google;
 
 use Mojo::UserAgent;
-use Carp qw(croak);
+use Mojo::URL;
+
+use Carp qw(croak carp);
+
+my $no_google   = qr{https://(?!(?:(?:\w+\.)*google\.com))};
+my $target_like = qr{
+   (?|
+      imgrefurl   = (?> [^&]+ )
+    | (?:q|url|u) = ( $no_google (?>[^&]+) )
+   )
+}x;
 
 sub new {
+   carp "send key-value mojo ua options" if @_ % 2 == 0;
    my ($class, %args) = @_;
 
-   my $ua = Mojo::UserAgent->new();
+   my $self = {ua => Mojo::UserAgent->new()};
    foreach my $method (keys %args) {
-      croak "invalid config: $method" if $method !~ /^connect_timeout|max_redirect|proxy$/;
-      $ua = eval "\$ua->$method('$args{$method}')";
+      eval { $self->{ua}->$method($args{$method}) };
+      carp "invalid 'Mojo::UserAgent' option: $method" if $@;
    }
+   $self->{url} = Mojo::URL->new('https://www.google.com/search');
+   $self->{ua}  = $ua;
 
-   bless {
-          google => 'https://www.google.com/search?q=%s',
-          ua     => $ua,
-         }, $class;
+   bless $self, $class;
 }
 
-sub fetch_links {
-   my ($self, $n, $article) = @_;
+# google and save results
+sub google {
+   my ($self, $article, $n) = @_;
+
+   return unless $article;
 
    $n //= 4;
-   my $dom = $self->{ua}->get(sprintf $self->{google}, $article)->result;
+   $self->{url}->query(q => $article);
+   my $tx = $self->{ua}->get("$self->{url}");
+   return -1 if !$tx->result->is_success;
 
-   # fetch links
+   $self->{index} = 0;
+   $self->{links} = [ $tx->result
+                         ->dom
+                         ->find('a[href]')
+                         ->map(attr => 'href')
+                         ->compact
+                         ->grep(qr{[^/]})
+                         ->map(sub { Mojo::URL->new($_)->query })
+                         ->compact
+                         ->map(sub { /$target_link/ ? $1 : ''  })
+                         ->compact
+                         ->head($n)
+                         ->each
+                    ];
+   return 1;
 }
 
 sub get_content {
    my $self = shift;
 
-   # iterate over them and return it
+   my $link = $self->{links} && $self->{links}[++$self->{index}];
+   return unless $link;
+
+   my $tx = $self->{ua}->get($link);
+   return -1 if !$tx->result->is_success;
+
+   my $content;
+
+   return 
 }

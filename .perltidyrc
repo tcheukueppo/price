@@ -29,3 +29,4 @@
 --indent-columns=3
 
 --maximum-line-length=127
+--break-at-old-method-breakpoints
