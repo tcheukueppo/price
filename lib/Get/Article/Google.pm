@@ -2,8 +2,9 @@ package Get::Article::Google;
 
 use Mojo::UserAgent;
 use Mojo::URL;
-use Mojo::Util qw(monkey_patch);
+
 use Carp qw(croak carp);
+use Scalar::Util qw(refaddr);
 
 use Data::Dumper;
 use feature qw(say);
@@ -39,11 +40,6 @@ sub new {
       eval { $self->{ua}->$method($args{$method}) };
       carp "invalid 'Mojo::UserAgent' option: $method" if $@;
    }
-
-   my $get_paragraph = sub {
-      # code to get paragraph
-   }; 
-   monkey_patch('Mojo::DOM','get_paragraph', $get_paragraph);
 
    $self->{url} = Mojo::URL->new('https://www.google.com/search');
    bless $self, $class;
@@ -97,15 +93,21 @@ sub get_content {
    return -1 unless $tx->result->is_success;
 
    my $content;
-   my ($index, $re) = (0, qr/ARRAY\(0x(.+)\)/);
+   my $index = 0;
    foreach my $p ($tx->result->dom->find('p')) {
-      $content->[$index]{p}{text} = $p->get_paragraph;
-      $content->[$index]{p}{id}   = # ..
-      $content->[$index++]{children_id} = [$p
+
+      $content->[$index]{c}{id}   = refaddr($p);
+      $content->[$index]{c}{text} = $p
+         ->child_nodes
+         ->grep(sub { $_->type eq 'text' or $_->tag =~ $TEXT_MODIFIERS })
+         ->map('content')
+         ->join('') =~ s/^\s+//r =~ s/\s+$//r =~ s/\s{2,}|\R/ /r;
+
+      $content->[$index++]{c_ids} = [$p
          ->child_nodes
          ->grep(sub { $_->tag eq 'p' })
-         ->map(sub { "$_" =~ s/$re/$1/r })
-         ->each()
+         ->map(sub { refaddr($_) })
+         ->each
       ];
    }
 
