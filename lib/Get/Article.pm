@@ -1,9 +1,9 @@
-package Get::Price;
+package Get::Article;
 
 use strict;
 use warnings;
 use utf8;
-use feature qw(current_sub fc say);
+use feature qw(fc say);
 
 no warnings 'utf8';
 
@@ -16,22 +16,15 @@ use Data::Dumper;
 # Regex for matching prices in different units
 my $PRICE_RE = qr/
    (?:
-        (?<u>(?&FRONT_UNIT))(?<m>(?&MONEY))\s+(?:-\s*\g{u}(?<m>(?&MONEY)))
-      | (?<m>(?&MONEY))(?<u>(?&BACK_UNIT))\s+(?:-\s*((?&MONEY)))\g{u}
+        (?<u>(?&FRONT_UNIT)) (?<m>(?&MONEY)) \s+ (?: - \s* \g{u} (?<m>(?&MONEY)) )
+      | (?<m>(?&MONEY)) (?<u>(?&BACK_UNIT)) \s+ (?: - \s* ((?&MONEY)) ) \g{u}
    )
    (?(DEFINE)
       (?<MONEY> \d+ (?: [.,] \d+ )? )
 
-      # define units here
-      (?<DOLLAR> $ | &dollar; | (?i: dollar(?:s)? ) )
-      (?<EURO> € | &euro; | (?i: euro(?:s)? ) )
-
-      # add more units here
       (?<FRONT_UNIT>
-         (?&DOLLAR) 
       )
       (?<BACK_UNIT>
-         (?&EURO)
       )
    )
 /x;
@@ -147,14 +140,14 @@ sub search_article {
    foreach my $paragraph (@{$self->{contents}}) {
       my $index = 0;
 
-      while ($paragraph =~ /\G \s* (.+?\b{wb}(?:[.]|(?=\s+\Z))\b{wb}) \s*/gsx) {
+      while ($paragraph =~ /\G\s*(.+?\b{wb}(?:[.]|(?=\s+\Z))\b{wb})\s*/gs) {
          my $sentence = $1;
          my @description;
 
          # Parameters for selection
          my ($score, $impure, $gaps, $total_jaro) = (0, 0, 0, 0);
 
-       TOKEN: while ($sentence =~ /\G \s* (.+?)\b{wb} \s*/gcsx) {
+       TOKEN: while ($sentence =~ /\G\s*(.+?)\b{wb}\s*/gcs) {
             my $token = fc $1;
 
             # Completely extracted

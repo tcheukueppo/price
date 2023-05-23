@@ -23,7 +23,7 @@ my $TARGET_LINK = qr{
    )
 }x;
 
-my $CONTENT_TAGS        = qr/^(?:div|span|p)$/;
+my $NESTED_TAGS         = qr/^(?:div|span)$/;
 my $TEXT_MODIFIERS_TAGS = do {
    '^(?:' . join(
       '|', qw(
@@ -71,47 +71,47 @@ sub google {
      ->find('a[href]')
      ->map(attr => 'href')
      ->compact
-     ->grep(qr{[^/]})
+     ->grep(qr{[^/#]})
      ->map(sub { Mojo::URL->new($_)->query })
      ->compact
      ->map(sub { /$TARGET_LINK/ ? $1 : '' })
      ->compact
+     ->uniq
      ->head($n);
 
    $self->{index} = 0;
    $self->{links} = [$c->shuffle->each];
-   say Dumper $self->{links};
    return 1;
 }
 
-sub next_link {
+sub next {
    $_[0]->{index} == $#{$_[0]->{links}} ? -1 : $_[0]->{index}++;
 }
 
-sub prev_link {
+sub prev {
    $_[0]->{index} == 0 ? -1 : $_[0]->{index}--;
 }
 
 sub _get_text {
    my $node = shift;
 
+   my $get_text = sub {
+      $_->type eq 'text'
+      ? $_->content
+      : defined($_->tag) ? (
+           $_->tag =~ /$TEXT_MODIFIERS_TAGS/ ? $_->all_text
+         : $_->tag =~ $NESTED_TAGS           ? _get_text($_)
+         :                                     ''
+      )
+      : '';
+   };
+
    no warnings 'recursion';
    my $text = $node
      ->child_nodes
-     ->map(
-        sub {
-           $_->type eq 'text'
-           ? $_->content
-           : defined($_->tag) ? (
-                $_->tag =~ /$TEXT_MODIFIERS_TAGS/ ? $_->text
-              : $_->tag =~ $CONTENT_TAGS          ? _get_text($_)
-              :                                     ''
-           )
-           : '';
-        }
-     )
+     ->map($get_text)
      ->compact
-     ->join(' ') =~ s/^\s+//r =~ s/\s+$//r =~ s/\s{2,}/ /gr;    # Beautify
+     ->join(' ') =~ s/^\s+//r =~ s/\s+$//r =~ s/\s{2,}/ /gr; # Beautify!
 
    return $text;
 }
@@ -128,22 +128,17 @@ sub get_content {
 
    my $content;
    my $index = 0;
-   foreach my $node ($tx->result->dom->find('*')->each) {
-      next if $node->type eq 'text' or $node->tag !~ $CONTENT_TAGS;
+   foreach my $node ($tx->result->dom->find('p, div')->each) {
       my $text = _get_text($node);
 
       next unless $text;
 
-      say "#####";
-      say $text, "\n";
-      say "#####";
-      $content->[$index]{text} = $text;
       $content->[$index]{id}   = refaddr($node);
-      $content->[$index]{type} = $node->tag;
+      $content->[$index]{text} = $text;
+      $content->[$index]{name} = $node->tag;
 
       $index++;
    }
 
-   # ...
    return $content;
 }
