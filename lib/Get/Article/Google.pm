@@ -8,6 +8,7 @@ no warnings 'utf8';
 
 use Mojo::UserAgent;
 use Mojo::URL;
+use Mojo::Collection qw(c);
 
 use Carp         qw(croak carp);
 use Scalar::Util qw(refaddr);
@@ -23,7 +24,7 @@ my $TARGET_LINK = qr{
    )
 }x;
 
-my $NESTED_TAGS         = qr/^(?:div|span)$/;
+my $NESTED_TAGS         = qr/^(?:div|p|span)$/;
 my $TEXT_MODIFIERS_TAGS = do {
    '^(?:' . join(
       '|', qw(
@@ -40,17 +41,11 @@ my $TEXT_MODIFIERS_TAGS = do {
 };
 
 sub new {
-   carp 'Err: please sent key-value Mojo::UserAgent options' if @_ % 2 == 0;
-   my ($class, %args) = @_;
-
-   my $self = {ua => Mojo::UserAgent->new()};
-   foreach my $method (keys %args) {
-      eval { $self->{ua}->$method($args{$method}) };
-      carp "invalid 'Mojo::UserAgent' option: $method" if $@;
-   }
-
-   $self->{url} = Mojo::URL->new('https://www.google.com/search');
-   bless $self, $class;
+   bless {
+          ua => $_[1] // Mojo::UserAgent->new(),
+          Mojo::URL->new('https://www.google.com/search'),
+         },
+     $_[0];
 }
 
 # google and save results
@@ -97,13 +92,13 @@ sub _get_text {
 
    my $get_text = sub {
       $_->type eq 'text'
-      ? $_->content
-      : defined($_->tag) ? (
-           $_->tag =~ /$TEXT_MODIFIERS_TAGS/ ? $_->all_text
-         : $_->tag =~ $NESTED_TAGS           ? _get_text($_)
-         :                                     ''
-      )
-      : '';
+        ? $_->content
+        : defined($_->tag) ? (
+                                $_->tag =~ /$TEXT_MODIFIERS_TAGS/ ? $_->all_text
+                              : $_->tag =~ $NESTED_TAGS           ? _get_text($_)
+                              :                                     ''
+                             )
+        : '';
    };
 
    no warnings 'recursion';
@@ -111,7 +106,7 @@ sub _get_text {
      ->child_nodes
      ->map($get_text)
      ->compact
-     ->join(' ') =~ s/^\s+//r =~ s/\s+$//r =~ s/\s{2,}/ /gr; # Beautify!
+     ->join(' ') =~ s/^\s+//r =~ s/\s+$//r =~ s/\s{2,}/ /gr;    # Beautify!
 
    return $text;
 }
@@ -128,10 +123,10 @@ sub get_content {
 
    my $content;
    my $index = 0;
-   foreach my $node ($tx->result->dom->find('p, div')->each) {
+   foreach my $node ($tx->result->dom->find('div, p')->each) {
       my $text = _get_text($node);
 
-      next unless $text;
+      next unless "$text";
 
       $content->[$index]{id}   = refaddr($node);
       $content->[$index]{text} = $text;
@@ -140,5 +135,6 @@ sub get_content {
       $index++;
    }
 
+   $content = [c(@$content)->uniq(sub { $_->{text} })->each];
    return $content;
 }

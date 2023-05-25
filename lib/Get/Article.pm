@@ -22,9 +22,9 @@ my $PRICE_RE = qr/
    (?(DEFINE)
       (?<MONEY> \d+ (?: [.,] \d+ )? )
 
-      (?<FRONT_UNIT>
+      (?<SYMBOL>
       )
-      (?<BACK_UNIT>
+      (?<ISO_CODE>
       )
    )
 /x;
