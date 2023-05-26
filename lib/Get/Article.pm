@@ -11,37 +11,42 @@ use Carp;
 use List::Util qw(min max sum);
 use Unicode::Normalize;
 
+use Get::Article::Currency;
+
+# debug
 use Data::Dumper;
 
-# Regex for matching prices in different units
-my $PRICE_RE = qr/
-   (?:
-        (?<u>(?&FRONT_UNIT)) (?<m>(?&MONEY)) \s+ (?: - \s* \g{u} (?<m>(?&MONEY)) )
-      | (?<m>(?&MONEY)) (?<u>(?&BACK_UNIT)) \s+ (?: - \s* ((?&MONEY)) ) \g{u}
-   )
-   (?(DEFINE)
-      (?<MONEY> \d+ (?: [.,] \d+ )? )
+my $NUMERIC  = qr/([^-+\d]*) ( [-+]? (?:\d+(?: [.]\d* )?|[.]\d+) ) (?: :[eE] ([-+]? (?:\d+)) )? (.*)/x;
+my $MONEY_RE = do {
+   local $" = '|';
+   my @syms = map { quotemeta } keys %Get::Article::Currency::SYMBOLS;
 
-      (?<SYMBOL>
+   qr/
+      \b
+      (?:
+         (?<x>(?&x))\s*(?<u>(?&iso)) |
+         (?<u>(?&sym))?\s*(?<x>(?&x))\s*(?(<u>)|(?<u>(?&sym)))
       )
-      (?<ISO_CODE>
+      \b
+      (?(DEFINE)
+         (?<x>\d+(?:[.,]\d+)?)
+         (?<sym>[@syms])
+         (?<iso>[@Get::Article::Currency::CODES])
       )
-   )
-/x;
-
-my $NUMERIC = qr/([^-+\d]*) ( [-+]? (?:\d+(?: [.]\d* )?|[.]\d+) ) (?: :[eE] ([-+]? (?:\d+)) )? (.*)/x;
+   /x
+};
 
 sub new {
    bless {
           contents => $_[2],
-          article  => {name => $_[1]},
+          article  => {
+                      name => $_[1]
+                     },
          },
      $_[0];
 }
 
-#
-## Accessors
-#
+# Accessors
 sub article {
    $_[0]->{article}{name} = $_[1] // return $_[0]->{article}{name};
    return $_[0];
@@ -56,7 +61,6 @@ sub rm_contents {
    delete $_[0]->{contents};
 }
 
-# Compute jaro similarity btw two strings
 sub _jaro {
    my ($s, $t) = @_;
 
@@ -117,23 +121,19 @@ sub _nfkd_normalize {
    ($ascii_string, $impurities);
 }
 
-# Perform mediocre NLP to detect our targeting article
 sub search_article {
-   Carp::croak '$self->search_article only accept key-value arguments' if @_ % 2 != 1;
+   Carp::croak 'need key-value args' if @_ % 2 != 1;
 
    my ($self, %args) = @_;
 
-   # Search configuration
    my $configs = {
-                  precision       => 2,
-                  jaro            => 0.8,
-                  str_normalize   => 1,
-                  price           => 0,
-                  digit_precision => 0.2,
+                  token_dist => 2,
+                  jaro       => 0.8,
+                  nkfd       => 1,
+                  price      => 0,
                  };
 
-   exists $configs->{$_} || Carp::croak("unknown configuration '$_' => '$args{$_}'"), $configs->{$_} = $args{$_}
-     foreach keys %args;
+   exists $configs->{$_} || Carp::croak("unknown config '$_' => '$args{$_}'"), $configs->{$_} = $args{$_} foreach keys %args;
 
    my @tokens = grep { length } split /\s+/, fc $self->{article}{name};
 
@@ -188,7 +188,7 @@ sub search_article {
             my $matched;
             my $impure_value = 0;
 
-            ($token, $impure_value) = _nfkd_normalize($token) if $configs->{str_normalize};
+            ($token, $impure_value) = _nfkd_normalize($token) if $configs->{nfkd};
 
             $matched = (sort { $b->[1] <=> $a->[1] } map { [$_, _jaro_winkler($_, $token)] } @tokens)[0];
             if ($matched and $matched->[1] >= $configs->{jaro}) {
@@ -200,7 +200,7 @@ sub search_article {
 
             # Dist btw tokens measures how much involved the article is in the sentence.
             #if (0) {
-            if ($gaps > $configs->{precision} and defined($score) and $score == 1) {
+            if ($gaps > $configs->{token_dist} and defined($score) and $score == 1) {
                $score = 0;
                $gaps  = 0;
             }

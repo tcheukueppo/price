@@ -30,3 +30,7 @@
 
 --maximum-line-length=127
 --break-at-old-method-breakpoints
+#--format-skipping
+#--code-skipping
+--maximum-fields-per-table=4
+--comma-arrow-breakpoints=4

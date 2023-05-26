@@ -34,7 +34,13 @@ foreach my $tr ($dom->each) {
 }
 
 $currencies = [c(@$currencies)->uniq(sub { $_->[1] eq '(none)' ? $_->[0] : $_->[1] })->each];
-say Dumper $currencies;
+foreach my $v (@$currencies) {
+   next if $v->[1] eq '(none)';
+
+   $v->[0] = $v->[0] eq '(none)' ? $v->[1] : $v->[0];
+   $v->[0] =~ s/^\s*(\S+) or (\S+).+$/[$1, $2]/;
+   say "$v->[1] => $v->[0]";
+}
 
 
 __DATA__
