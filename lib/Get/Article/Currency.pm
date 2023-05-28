@@ -1,115 +1,126 @@
 package Get::Article::Currency;
 
 # OSI CODES
-our @CODES = qw(
-   RUB AFN EUR ALL
-   GBP DZD AOA ARS
-   AMD AUD AZN BDT
-   BYN INR BOB USD
-   BWP BRL SGD BIF
-   CAD CLP CNY COP
-   CDF NZD CRC CZK
-   DOP EGP ZAR ETB
-   FJD GMD GEL GHS
-   GTQ GNF GYD HTG
-   HNL HUF ISK IDR
-   IRR IQD ILS JMD
-   JPY KZT KES KPW
-   KRW KWD KGS LAK
-   LYD CHF MGA MWK
-   MYR MRU MUR MXN
-   MDL MNT MAD MZN
-   MMK NIO NGN MKD
-   TRY NOK PKR PGK
-   PYG PEN PHP PLN
-   RON RWF WST RSD
-   SCR SLE SBD SOS
-   SSP LKR SDG SRD
-   SEK SYP TWD TJS
-   TZS THB TOP TTD
-   TND TMT UGX UAH
-   UYU UZS VUV VES
-   VED VND YER ZMW
+@CODES = qw(
+  RUB AFN EUR ALL GBP DZD AOA XCD ARS AMD AWG SHP AUD AZN BSD BHD
+  BDT BBD BYN BZD XOF BMD BTN INR BOB USD BAM BWP BRL BND SGD BGN
+  BIF KHR XAF CAD CVE KYD CLP CNY COP KMF CDF NZD CRC CUP ANG CZK
+  DKK DJF DOP EGP ERN SZL ZAR ETB FKP FJD XPF GMD GEL GHS GIP GTQ
+  GNF GYD HTG HNL HKD HUF ISK IDR IRR IQD ILS JMD JPY JOD KZT KES
+  KPW KRW KWD KGS LAK LBP LSL LRD LYD CHF MOP MGA MWK MYR MVR MRU
+  MUR MXN MDL MNT MAD MZN MMK NAD NPR NIO NGN MKD TRY NOK OMR PKR
+  PAB PGK PYG PEN PHP PLN QAR RON RWF WST STN SAR RSD SCR SLE SBD
+  SOS LKR SDG SRD SEK SYP TWD TJS TZS THB TOP TTD TND TMT UGX UAH
+  AED UYU UZS VUV VES VED VND YER ZMW
 );
 
 # CURRENCY SYMBOLS
-our $SYMBOLS = {
-               '₲'    => [qw(PYG)],
-               DEN    => [qw(MKD)],
-               Ar     => [qw(MGA)],
-               Lei    => [qw(MDL RON)],
-               '₴'    => [qw(UAH)],
-               Br     => [qw(BYN ETB)],
-               '£'    => [qw(GBP)],
-               UM     => [qw(MRU)],
-               '₵'    => [qw(GHS)],
-               Bs     => [qw(BOB)],
-               Lek    => [qw(ALL)],
-               'Bs.S' => [qw(VES)],
-               '¥'    => [qw(CNY JPY)],
-               '₸'    => [qw(KZT)],
-               '৳'    => [qw(BDT)],
-               D      => [qw(GMD)],
-               '₹'    => [qw(INR)],
-               DIN    => [qw(RSD)],
-               '₺'    => [qw(TRY)],
-               Le     => [qw(SLE)],
-               G      => [qw(HTG)],
-               Fr     => [qw(BIF CDF GNF CHF RWF)],
-               '₼'    => [qw(AZN)],
-               '₽'    => [qw(RUB)],
-               VT     => [qw(VUV)],
-               Ft     => [qw(HUF)],
-               '₾'    => [qw(GEL)],
-               Leu    => [qw(MDL RON)],
-               K      => [qw(MWK MMK PGK ZMW)],
-               L      => [qw(HNL)],
-               'R$'   => [qw(BRL)],
-               DA     => [qw(DZD)],
-               P      => [qw(BWP)],
-               Q      => [qw(GTQ)],
-               'T$'   => [qw(TOP)],
-               Ks     => [qw(MMK)],
-               Re     => [qw(MUR PKR SCR LKR)],
-               R      => [qw(ZAR)],
-               '֏'    => [qw(AMD)],
-               '؋'    => [qw(AFN)],
-               kr     => [qw(ISK NOK SEK)],
-               DH     => [qw(MAD)],
-               Mt     => [qw(MZN)],
-               Sh     => [qw(KES SOS TZS UGX)],
-               Rl     => [qw(IRR YER)],
-               Kz     => [qw(AOA)],
-               SSP    => [qw(SSP)],
-               'S/'   => [qw(PEN)],
-               ID     => [qw(IQD)],
-               Rp     => [qw(IDR)],
-               Rs     => [qw(MUR PKR SCR LKR)],
-               KD     => [qw(KWD)],
-               'zł'   => [qw(PLN)],
-               '$'    => [qw(ARS AUD USD SGD CAD CLP COP NZD DOP FJD GYD JMD MXN WST SBD SRD TWD TTD UYU)],
-               DT     => [qw(TND)],
-               LD     => [qw(LYD)],
-               LE     => [qw(EGP)],
-               'Kč'   => [qw(CZK)],
-               '₡'    => [qw(CRC)],
-               Shs    => [qw(KES SOS TZS UGX)],
-               m      => [qw(TMT)],
-               'C$'   => [qw(NIO)],
-               '₦'    => [qw(NGN)],
-               Rls    => [qw(IRR YER)],
-               'Bs.D' => [qw(VED)],
-               '฿'    => [qw(THB)],
-               LS     => [qw(SDG SYP)],
-               '₩'    => [qw(KPW KRW)],
-               '₪'    => [qw(ILS)],
-               '₫'    => [qw(VND)],
-               '€'    => [qw(EUR)],
-               '₭'    => [qw(LAK)],
-               '₮'    => [qw(MNT)],
-               RM     => [qw(MYR)],
-               som    => [qw(KGS)],
-               soum   => [qw(UZS)],
-               SM     => [qw(TJS)],
-               '₱'    => [qw(PHP)],
-              };
+$SYMBOLS = {
+   Ft     => ['HUF'],
+   Sh     => [qw(KES SOS TZS UGX)],
+   Ar     => ['MGA'],
+   'C$'   => ['NIO'],
+   Db     => ['STN'],
+   '₱'    => ['PHP'],
+   '₵'    => ['GHS'],
+   KD     => ['KWD'],
+   UM     => ['MRU'],
+   Br     => [qw(BYN ETB)],
+   Le     => ['SLE'],
+   Q      => ['GTQ'],
+   DH     => ['MAD'],
+   D      => ['GMD'],
+   QR     => ['QAR'],
+   Rf     => ['MVR'],
+   '₼'    => ['AZN'],
+   R      => ['ZAR'],
+   m      => ['TMT'],
+   Dh     => ['AED'],
+   '₺'    => ['TRY'],
+   Leu    => [qw(MDL RON)],
+   'MOP$' => ['MOP'],
+   'Bs.D' => ['VED'],
+   Lei    => [qw(MDL RON)],
+   VT     => ['VUV'],
+   E      => ['SZL'],
+   'B/'   => ['PAB'],
+   '៛'    => ['KHR'],
+   '₴'    => ['UAH'],
+   Bs     => ['BOB'],
+   K      => [qw(MWK MMK PGK ZMW)],
+   LE     => ['EGP'],
+   ID     => ['IQD'],
+   Rl     => [qw(IRR SAR YER)],
+   '₽'    => ['RUB'],
+   '₪'    => ['ILS'],
+   LS     => [qw(SDG SYP)],
+   Nu     => ['BTN'],
+   RO     => ['OMR'],
+   '₩'    => [qw(KPW KRW)],
+   Shs    => [qw(KES SOS TZS UGX)],
+   '₸'    => ['KZT'],
+   '£'    => [qw(GBP SHP FKP GIP)],
+   '₭'    => ['LAK'],
+   soum   => ['UZS'],
+   '؋'    => ['AFN'],
+   '฿'    => ['THB'],
+   'T$'   => ['TOP'],
+   '€'    => ['EUR'],
+   Fr     => [qw(XOF BIF XAF KMF CDF DJF XPF GNF CHF RWF)],
+   KM     => ['BAM'],
+   DT     => ['TND'],
+   G      => ['HTG'],
+   '₹'    => ['INR'],
+   Lev    => ['BGN'],
+   '₾'    => ['GEL'],
+   'Kč'   => ['CZK'],
+   LD     => ['LYD'],
+   '¥'    => [qw(CNY JPY)],
+   SM     => ['TJS'],
+   P      => ['BWP'],
+   'S/'   => ['PEN'],
+   kr     => [qw(DKK ISK NOK SEK)],
+   Ks     => ['MMK'],
+   'R$'   => ['BRL'],
+   '₡'    => ['CRC'],
+   'zł'   => ['PLN'],
+   som    => ['KGS'],
+   L      => [qw(SZL HNL LSL)],
+   '৳'    => ['BDT'],
+   '₫'    => ['VND'],
+   DIN    => ['RSD'],
+   '₦'    => ['NGN'],
+   'ƒ'    => [qw(AWG ANG)],
+   Lek    => ['ALL'],
+   Re     => [qw(MUR NPR PKR SCR LKR)],
+   JD     => ['JOD'],
+   BD     => ['BHD'],
+   '֏'    => ['AMD'],
+   DA     => ['DZD'],
+   Dhs    => ['AED'],
+   '$'    => [
+      qw(
+        XCD ARS AUD BSD
+        BBD BZD BMD USD
+        BND SGD CAD CVE
+        KYD CLP COP NZD
+        CUP DOP FJD GYD
+        HKD JMD LRD MXN
+        NAD WST SBD SRD
+        TWD TTD UYU
+        )
+   ],
+   Mt     => ['MZN'],
+   M      => ['LSL'],
+   'Bs.S' => ['VES'],
+   Rp     => ['IDR'],
+   RM     => ['MYR'],
+   DEN    => ['MKD'],
+   Rls    => [qw(IRR SAR YER)],
+   Rs     => [qw(MUR NPR PKR SCR LKR)],
+   Kz     => ['AOA'],
+   LL     => ['LBP'],
+   Nkf    => ['ERN'],
+   '₮'    => ['MNT'],
+   '₲'    => ['PYG'],
+};

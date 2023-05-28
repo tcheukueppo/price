@@ -8,6 +8,7 @@ use Data::Dumper;
 
 use Mojo::DOM;
 use Mojo::Collection qw(c);
+use List::Util       qw(uniq);
 
 my $dom = Mojo::DOM
   ->new(join '', <DATA>)
@@ -19,8 +20,7 @@ my $dom = Mojo::DOM
   )
   ->last
   ->find('tr')
-  ->grep(sub { $_->find('th')->each ? 0 : 1 })
-  ->grep(sub { not $_->attr('style') });
+  ->grep(sub { $_->find('th')->each ? 0 : 1 });
 
 my $currencies;
 foreach my $tr ($dom->each) {
@@ -34,14 +34,25 @@ foreach my $tr ($dom->each) {
 }
 
 $currencies = [c(@$currencies)->uniq(sub { $_->[1] eq '(none)' ? $_->[0] : $_->[1] })->each];
+my %sym;
+my @codes;
 foreach my $v (@$currencies) {
+   next if $v->[0] eq '(none)';
    next if $v->[1] eq '(none)';
 
-   $v->[0] = $v->[0] eq '(none)' ? $v->[1] : $v->[0];
-   $v->[0] =~ s/^\s*(\S+) or (\S+).+$/[$1, $2]/;
-   say "$v->[1] => $v->[0]";
+   my ($k, $k1) = $v->[0] =~ m/^\s*(\S+) or (\S+).+$/g;
+   $k //= $v->[0] and push $sym{$k}->@*, $v->[1];
+   push $sym{$k1}->@*, $v->[1] if defined $k1;
+   push @codes, $v->[1];
+
+   #$v->[0] = $v->[0] eq '(none)' ? $v->[1] : $v->[0];
+   #say "$v->[1] => $v->[0]";
 }
 
+$sym{$_} = [uniq $sym{$_}->@*] foreach keys %sym;
+$Data::Dumper::Useqq     = 0;
+$Data::Dumper::Quotekeys = 0;
+say Data::Dumper->Dump([{%sym}, [@codes]], [qw(SYMBOLS *CODES)]);
 
 __DATA__
 <!DOCTYPE html>
