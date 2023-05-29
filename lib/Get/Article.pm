@@ -209,8 +209,8 @@ sub search_article {
 
          # Pick the best description
          if (@description) {
-            $self->{article}{F}[$index++]{long} = $paragraph;
-            $self->{article}{F}[$index] =
+            $self->{article}{F}[$index]{long} = $paragraph;
+            $self->{article}{F}[$index++] =
               (sort { $b->{score} <=> $a->{score} || $a->{impure} <=> $b->{impure} || $a->{jaro} <=> $b->{jaro} } @description)
               [0];
          }
