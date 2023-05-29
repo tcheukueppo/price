@@ -71,6 +71,7 @@ sub google {
      ->map(attr => 'href')
      ->compact
      ->grep(qr{^\s*[^#]})
+
      #->grep($IMAGE_EX)
      ->map(sub { Mojo::URL->new($_)->query })
      ->compact
@@ -137,7 +138,7 @@ sub get_contents {
       next unless "$text";
 
       $content->[$index]{id}   = refaddr($node);
-      $content->[$index]{text} = $text;
+      $content->[$index]{text} = ref $text ? $text->to_string : $text;
       $content->[$index]{name} = $node->tag;
 
       $index++;

@@ -23,9 +23,8 @@ sub app {
    my $g       = Get::Article::Google->new($ua);
 
    if ($g->google($article)) {
-      if (defined(my $contents = $g->get_contents)) {
-         say Dumper $contents;
-         exit 1;
+      my $contents = $g->get_contents;
+      if ($contents) {
          @$contents = map { $_->{text} } @$contents;
          my $result = Get::Article->new($article, $contents)->search_article(
                                                                              price      => 0,
