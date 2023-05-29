@@ -37,7 +37,6 @@ sub convert {
 
    $_ = (exists $codes{uc $_} ? uc $_ : exists $sym->{$_} ? $sym->{$_}[0] : return) foreach @unit;
 
-   print dumper [@unit], "\n";
    my $date = DateTime->now;
    $self->{url}->query(
                        base       => $unit[0],

@@ -7,7 +7,7 @@ use feature qw(fc say);
 
 no warnings 'utf8';
 
-use Carp;
+use Carp qw(croak);
 use List::Util qw(min max sum);
 use Unicode::Normalize;
 
@@ -16,12 +16,12 @@ use Get::Article::Currency;
 # debug
 use Data::Dumper;
 
-my $NUMERIC  = qr/([^-+\d]*) ( [-+]? (?:\d+(?: [.]\d* )?|[.]\d+) ) (?: :[eE] ([-+]? (?:\d+)) )? (.*)/x;
+my $NUMERIC  = qr/( [-+]? (?:\d+(?: [.]\d* )?|[.]\d+) ) (?: :[eE] ([-+]? (?:\d+)) )? ([^\s]*)/x;
 my $MONEY_RE = do {
    local $" = '|';
    my @syms = map { quotemeta } keys %Get::Article::Currency::SYMBOLS;
 
-   qr/
+   qr{
       \b
       (?:
          (?<x>(?&x))\s*(?<u>(?&iso)) |
@@ -33,15 +33,13 @@ my $MONEY_RE = do {
          (?<sym>[@syms])
          (?<iso>[@Get::Article::Currency::CODES])
       )
-   /x
+   }x
 };
 
 sub new {
    bless {
           contents => $_[2],
-          article  => {
-                      name => $_[1]
-                     },
+          article  => {name => $_[1]},
          },
      $_[0];
 }
@@ -116,16 +114,14 @@ sub _jaro_winkler {
 
 sub _nfkd_normalize {
    my $impurities;
-   my $ascii_string = join '', map { $impurities += int(length() / 2); substr($_, 0, 1) } map { NFKD($_) } split //, $_[0];
+   my $ascii_string = join '', map { $impurities += length() - 1; substr($_, 0, 1) } map { NFKD($_) } split //, $_[0];
 
    ($ascii_string, $impurities);
 }
 
 sub search_article {
-   Carp::croak 'need key-value args' if @_ % 2 != 1;
-
-   my ($self, %args) = @_;
-
+   croak 'need key-value args' if @_ % 2 != 1;
+   my $self    = shift;
    my $configs = {
                   token_dist => 2,
                   jaro       => 0.8,
@@ -133,10 +129,13 @@ sub search_article {
                   price      => 0,
                  };
 
-   exists $configs->{$_} || Carp::croak("unknown config '$_' => '$args{$_}'"), $configs->{$_} = $args{$_} foreach keys %args;
+   my %args = @_;
+   foreach my $key (keys %args) {
+      exists $configs->{$key} || croak "unknown config: '$_' => '$args{$key}'";
+      $configs->{$key} = $args{$key};
+   }
 
    my @tokens = grep { length } split /\s+/, fc $self->{article}{name};
-
    foreach my $paragraph (@{$self->{contents}}) {
       my $index = 0;
 
@@ -166,23 +165,21 @@ sub search_article {
             # Punctuation chars
             next if $token =~ /^\p{Punct}+$/;
 
-            # Token is a numerical value and is treated based on unit
-            # of measurement and approximation
+            # Token is a numerical value and is treated based
+            # on its unit of measurement.
             if ($token =~ $NUMERIC) {
-               my ($start_unit, $value, $exp, $end_unit) = (fc $1 // '', $2, $3 // '', fc $4 // '');
+               my ($value, $exp, $unit) = ($1, $2 // '', fc $3 // '');
 
-               foreach my $a_token (@tokens) {
-                  if ($a_token =~ $NUMERIC) {
-                     my ($a_start_unit, $a_value, $a_exp, $a_end_unit) = (fc $1 // '', $2, $3 // '', fc $4 // '');
+               foreach (@tokens) {
+                  if ($NUMERIC) {
+                     my ($valid_value, $valid_exp, $valid_unit) = ($1, $2 // '', fc $3 // '');
 
-                     $end_unit eq $a_end_unit     or next;
-                     $start_unit eq $a_start_unit or next;
-                     $exp =~ s/^\+//r ne $a_exp =~ s/^\+//r and next;
-
-                     $score++, last if abs($value - $a_value) <= $configs->{digit_precision};
+                     next unless $unit eq $valid_unit;
+                     next unless $exp eq $valid_exp;
+                     $score++, last if $value eq $valid_value;
                   }
                }
-               next;
+               next
             }
 
             my $matched;

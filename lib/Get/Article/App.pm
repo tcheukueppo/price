@@ -1,4 +1,21 @@
-sub new {
+package Article::App;
+
+use strict;
+use warnings;
+use utf8;
+
+no warnings 'utf8';
+
+use Getopt::Long;
+use Get::Article;
+use Get::Article::Exchange;
+use Get::Article::Google;
+
+sub app {
+   # start app here
+}
+
+sub main {
    carp 'Err: please sent key-value Mojo::UserAgent options' if @_ % 2 == 0;
    my ($class, %args) = @_;
 
