@@ -1,6 +1,6 @@
 --iterations=2
 
---want-break-after="% + - * / x != == >= <= =~ !~ < >  | & = **= += *= &= <<= &&= -= /= |= >>= ||= //= .= %= ^= x="
+--want-break-after="% + - * / x != == >= <= =~ !~ < >  | & = **= += *= &= <<= &&= -= /= |= >>= ||= //= .= %= ^= x= <=>"
 --want-break-before=". << >> -> && || //"
 
 --character-encoding=utf8
@@ -32,5 +32,5 @@
 --break-at-old-method-breakpoints
 #--format-skipping
 #--code-skipping
-#--maximum-fields-per-table=4
-#--comma-arrow-breakpoints=4
+--maximum-fields-per-table=4
+--comma-arrow-breakpoints=4

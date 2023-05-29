@@ -7,7 +7,7 @@ use feature qw(fc say);
 
 no warnings 'utf8';
 
-use Carp qw(croak);
+use Carp       qw(croak);
 use List::Util qw(min max sum);
 use Unicode::Normalize;
 
@@ -39,7 +39,9 @@ my $MONEY_RE = do {
 sub new {
    bless {
           contents => $_[2],
-          article  => {name => $_[1]},
+          article  => {
+                      name => $_[1]
+                     },
          },
      $_[0];
 }
@@ -121,7 +123,7 @@ sub _nfkd_normalize {
 
 sub search_article {
    croak 'need key-value args' if @_ % 2 != 1;
-   my $self    = shift;
+   my $self = shift;
    my $configs = {
                   token_dist => 2,
                   jaro       => 0.8,
@@ -179,7 +181,7 @@ sub search_article {
                      $score++, last if $value eq $valid_value;
                   }
                }
-               next
+               next;
             }
 
             my $matched;
@@ -208,25 +210,28 @@ sub search_article {
 
          # Pick the best description
          if (@description) {
-            $self->{article}{F}[$index] =
-              (sort { $b->{score} <=> $a->{score} || $a->{impure} <=> $b->{impure} || $a->{jaro} <=> $b->{jaro} } @description)
-              [0];
-
             $self->{article}{F}[$index++]{long} = $paragraph;
+            $self->{article}{F}[$index] =
+              shift sort { $b->{score} <=> $a->{score} || $a->{impure} <=> $b->{impure} || $a->{jaro} <=> $b->{jaro} }
+              @description;
          }
       }
    }
 
    if ($configs->{price}) {
-      $_->{price} = $self->get_price($_) foreach @{$self->{article}{F}};
+      @{$self->{article}{F}} =
+        map { $_->{price} = $self->get_price($_); defined $_->{price} ? $_ : () } @{$self->{article}{F}};
    }
 
    return $self->{article}{F};
 }
 
 sub get_price {
-   my ($self, $article) = @_;
+   my ($self, $description) = @_;
+   my $price;
 
+   push @$price, [$+{x}, $+{u}] while $description =~ /$MONEY_RE/g;
+   return $price;
 }
 
 =encoding utf8
