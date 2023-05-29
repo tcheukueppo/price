@@ -24,7 +24,6 @@ sub app {
 
    if ($g->google($article)) {
       if (defined(my $contents = $g->get_contents)) {
-         say "good and";
          say Dumper $contents;
          exit 1;
          @$contents = map { $_->{text} } @$contents;
