@@ -28,13 +28,13 @@ my $NESTED_TAGS         = qr/^(?:div|p|span)$/;
 my $TEXT_MODIFIERS_TAGS = do {
    '^(?:' . join(
       '|', qw(
-         h1 h2 h3 h4 h5 h6 big
-         a abbr b bdi bdo cite
-         del dfn em i ins kbd acronym
-         data label mark meter tt
-         output progress q ruby
-         s samp slot small strong
-         sub sup time u var wbr
+        h1 h2 h3 h4 h5 h6 big
+        a abbr b bdi bdo cite
+        del dfn em i ins kbd acronym
+        data label mark meter tt
+        output progress q ruby
+        s samp slot small strong
+        sub sup time u var wbr
         )
      )
      . ')$';
@@ -42,8 +42,12 @@ my $TEXT_MODIFIERS_TAGS = do {
 
 sub new {
    bless {
-          ua => $_[1] // Mojo::UserAgent->new(),
-          Mojo::URL->new('https://www.google.com/search'),
+          ua  => $_[1] // Mojo::UserAgent->new(),
+          url => Mojo::URL
+            ->new
+            ->scheme('https')
+            ->host('www.google.com')
+            ->path('/search')
          },
      $_[0];
 }
@@ -58,7 +62,7 @@ sub google {
    $self->{url}->query(q => $article);
 
    my $tx = $self->{ua}->get("$self->{url}");
-   return -1 if !$tx->result->is_success;
+   return 0 if !$tx->result->is_success;
 
    my $c = $tx
      ->result
@@ -111,7 +115,7 @@ sub _get_text {
    return $text;
 }
 
-sub get_content {
+sub get_contents {
    my $self = shift;
    my $link = $self->{links} && $self->{links}[++$self->{index}];
 
@@ -119,7 +123,7 @@ sub get_content {
 
    $link = 'https://dir.indiamart.com/impcat/hp-computer-monitor.html';
    my $tx = $self->{ua}->get($link);
-   return -1 unless $tx->result->is_success;
+   return 0 unless $tx->result->is_success;
 
    my $content;
    my $index = 0;

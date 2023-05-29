@@ -3,15 +3,14 @@ package Get::Article;
 use strict;
 use warnings;
 use utf8;
-use feature qw(fc say);
-
-no warnings 'utf8';
+use feature qw(fc);
 
 use Carp       qw(croak);
-use List::Util qw(min max sum);
+use List::Util qw(min max);
 use Unicode::Normalize;
-
 use Get::Article::Currency;
+
+no warnings 'utf8';
 
 # debug
 use Data::Dumper;
@@ -19,7 +18,7 @@ use Data::Dumper;
 my $NUMERIC  = qr/( [-+]? (?:\d+(?: [.]\d* )?|[.]\d+) ) (?: :[eE] ([-+]? (?:\d+)) )? ([^\s]*)/x;
 my $MONEY_RE = do {
    local $" = '|';
-   my @syms = map { quotemeta } keys %Get::Article::Currency::SYMBOLS;
+   my @syms = map { quotemeta } keys %$Get::Article::Currency::SYMBOLS;
 
    qr{
       \b
@@ -30,8 +29,8 @@ my $MONEY_RE = do {
       \b
       (?(DEFINE)
          (?<x>\d+(?:[.,]\d+)?)
-         (?<sym>[@syms])
-         (?<iso>[@Get::Article::Currency::CODES])
+         (?<sym>@syms)
+         (?<iso>@Get::Article::Currency::CODES)
       )
    }x
 };
@@ -133,7 +132,7 @@ sub search_article {
 
    my %args = @_;
    foreach my $key (keys %args) {
-      exists $configs->{$key} || croak "unknown config: '$_' => '$args{$key}'";
+      exists $configs->{$key} || croak "unknown config: '$key' => '$args{$key}'";
       $configs->{$key} = $args{$key};
    }
 
@@ -212,15 +211,15 @@ sub search_article {
          if (@description) {
             $self->{article}{F}[$index++]{long} = $paragraph;
             $self->{article}{F}[$index] =
-              shift sort { $b->{score} <=> $a->{score} || $a->{impure} <=> $b->{impure} || $a->{jaro} <=> $b->{jaro} }
-              @description;
+              (sort { $b->{score} <=> $a->{score} || $a->{impure} <=> $b->{impure} || $a->{jaro} <=> $b->{jaro} } @description)
+              [0];
          }
       }
    }
 
    if ($configs->{price}) {
       @{$self->{article}{F}} =
-        map { $_->{price} = $self->get_price($_); defined $_->{price} ? $_ : () } @{$self->{article}{F}};
+        map { $_->{price} = $self->get_price($_->{long}); $_->{price} ? $_ : () } @{$self->{article}{F}};
    }
 
    return $self->{article}{F};
