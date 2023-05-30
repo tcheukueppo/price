@@ -19,25 +19,28 @@ my $NUMERIC  = qr/( [-+]? (?:\d+(?: [.]\d* )?|[.]\d+) ) (?: :[eE] ([-+]? (?:\d+)
 my $MONEY_RE = do {
    local $" = '|';
    my @syms = map { quotemeta } keys %$Get::Article::Currency::SYMBOLS;
-   my %inv  = (',' => '.');
-   my
+   my %inv = (
+              ' ' => qr/[,.]/,
+              ',' => qr/\./,
+              '.' => ',',
+             );
 
-     qr{
-      \b
+   qr~
+      \b{wb}
       (?:
-         (?<x>(?&x))\s*(?<u>(?&iso)) |
-         (?<u>(?&sym))?\s*(?<x>(?&x))\s*(?(<u>)|(?<u>(?&sym)))
+         (?<c>(?&x)) \s* (?<u>(?&iso)) |
+         (?<u>(?&sym))? \s* (?<c>(?&x)) \s* (?(<u>)|(?<u>(?&sym)))
       )
-      \b
+      \b{wb}
       (?(DEFINE)
          (?<x>
-            (?:\d+|\d(?:(?<sep>[ ,.])\d{3})+)  # integer
-               (?(<sep>)(?:$inv{$+{sep}}\d+)?) # decimal
+            (?: \d{1,3} (?<sep>[ ,.])\d{3} (?>(?:\g{sep}\d{3})*) | \d+ ) # integer
+            (?:(??{ $inv{$+{sep} // ' '} })\d+)? # decimal
          )
          (?<sym>@syms)
          (?<iso>@Get::Article::Currency::CODES)
       )
-   }x
+   ~x
 };
 
 sub new {
@@ -120,6 +123,15 @@ sub _nfkd_normalize {
    my $ascii_string = join '', map { $impurities += length() - 1; substr($_, 0, 1) } map { NFKD($_) } split //, $_[0];
 
    ($ascii_string, $impurities);
+}
+
+sub _get_price {
+   my $description = shift;
+
+   print "on $description\n";
+   my $price;
+   push @$price, [$+{c}, $+{u}] while $description =~ /$MONEY_RE/g;
+   return $price;
 }
 
 sub search_article {
@@ -216,18 +228,10 @@ sub search_article {
 
    if ($configs->{price}) {
       @{$self->{article}{F}} =
-        map { $_->{price} = $self->get_price($_->{long}); $_->{price} ? $_ : () } @{$self->{article}{F}};
+        map { $_->{price} = _get_price($_->{long}); $_->{price} ? $_ : () } @{$self->{article}{F}};
    }
 
    return $self->{article}{F};
-}
-
-sub get_price {
-   my ($self, $description) = @_;
-   my $price;
-
-   push @$price, [$+{x}, $+{u}] while $description =~ /$MONEY_RE/g;
-   return $price;
 }
 
 =encoding utf8
