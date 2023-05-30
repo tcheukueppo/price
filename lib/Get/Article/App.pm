@@ -30,7 +30,7 @@ sub app {
                                                                              price      => 0,
                                                                              nkfd       => 1,
                                                                              jaro       => 0.9,
-                                                                             mark_token => 0,
+                                                                             token_perc => 80,
                                                                              token_dist => 1,
                                                                             );
          say Dumper $result;

@@ -125,7 +125,7 @@ sub search_article {
    my $self = shift;
    my $configs = {
                   token_dist => 2,
-                  mark_token => 0,   # 1 to use marked tokens, 0 for all tokens
+                  token_perc => 80,
                   jaro       => 0.8,
                   nkfd       => 1,
                   price      => 0,
@@ -137,43 +137,26 @@ sub search_article {
       $configs->{$key} = $args{$key};
    }
 
-   my @tokens = map { $configs->{mark_token} ? /\*(.+)\*/ ? $1 : () : $_ } grep { length } split /\s+/,
-     fc $self->{article}{name};
-
+   my $index  = 0;
+   my @tokens = grep { length } split /\s+/, fc $self->{article}{name};
    foreach my $paragraph (@{$self->{contents}}) {
-      my $index = 0;
 
-      while ($paragraph =~ /\G\s*(.+?\b{wb}(?:[.]|(?=\s+\Z))\b{wb})\s*/gs) {
+      my @description;
+      while ($paragraph =~ /\G\s*(.+?\b{wb}(?:[.?!]+|(?=\s*\z))\b{wb})\s*/g) {
+         my %passed;
          my $sentence = $1;
-         my (@description, %passed);
          my ($score, $impure, $gaps, $total_jaro) = (0, 0, 0, 0);
 
-       TOKEN: while ($sentence =~ /\G\s*(.+?)\b{wb}\s*/gcs) {
-            my $token = fc $1;
+         while ($sentence =~ /\G\s*(.+?)\b{wb}\s*/g) {
+            my $word = fc $1;
 
-            # Completely extracted
-            if ($token eq '.' || pos($sentence) == length $sentence) {
-               push @description,
-                 {
-                  short  => $sentence,
-                  score  => $score,
-                  impure => $impure,
-                  jaro   => $total_jaro,
-                 }
-                 if $score == @tokens;
-               last;
-            }
+            next if $word =~ /^\p{P}+$/;
 
-            # Punctuation chars
-            next if $token =~ /^\p{P}+$/;
-
-            # Token is a numerical value and is treated based
-            # on its unit of measurement.
-            if ($token =~ $NUMERIC) {
+            if ($word =~ $NUMERIC) {
                my ($value, $exp, $unit) = ($1, $2 // '', fc $3 // '');
 
-               foreach (@tokens) {
-                  if ($NUMERIC) {
+               foreach my $token (@tokens) {
+                  if ($token =~ $NUMERIC) {
                      my ($valid_value, $valid_exp, $valid_unit) = ($1, $2 // '', fc $3 // '');
 
                      next unless $unit eq $valid_unit;
@@ -189,16 +172,11 @@ sub search_article {
             }
 
             my $impure_value = 0;
-            ($token, $impure_value) = _nfkd_normalize($token) if $configs->{nfkd};
+            ($word, $impure_value) = _nfkd_normalize($word) if $configs->{nfkd};
 
-            my $got_token = (sort { $b->[1] <=> $a->[1] } map { [$_, _jaro_winkler($_, $token)] } @tokens)[0];
+            my $got_token = (sort { $b->[1] <=> $a->[1] } map { [$_, _jaro_winkler($_, $word)] } @tokens)[0];
             if ($got_token and $got_token->[1] >= $configs->{jaro} and !exists $passed{$got_token->[0]}) {
-#               say Dumper {
-#                           para    => $paragraph,
-#                           matched => $got_token->[0],
-#                           jaro    => $got_token->[1],
-#                          };
-               say "look jaro: $got_token->[1], on $token <=> $got_token->[0]";
+               say "look jaro: $got_token->[1], on $word <=> $got_token->[0]";
                $passed{$got_token->[0]} = 1;
                $total_jaro += $got_token->[1];
                $impure     += $impure_value;
@@ -206,24 +184,35 @@ sub search_article {
                next;
             }
 
+            if (($score / @tokens) * 100 >= $configs->{token_perc}) {
+               say "total jaro: $total_jaro", $score, @tokens;
+               push @description,
+                 {
+                  short  => $sentence,
+                  score  => $score,
+                  impure => $impure,
+                  jaro   => $total_jaro,
+                 };
+               next;
+            }
+
             # Dist btw tokens measures how much involved the article is in the sentence.
             #if (0) {
-            if ($gaps > $configs->{token_dist} and defined($score) and $score > 1) {
+            if ($gaps > $configs->{token_dist} and defined($score)) {
                %passed = ();
                $score  = $gaps = $impure_value = $total_jaro = 0;
+               next;
             }
-            else {
-               $gaps++;
-            }
-         }
 
-         # Pick the best description
-         if (@description) {
-            $self->{article}{F}[$index] =
-              (sort { $b->{score} <=> $a->{score} || $a->{impure} <=> $b->{impure} || $a->{jaro} <=> $b->{jaro} } @description)
-              [0];
-            $self->{article}{F}[$index++]{long} = $paragraph;
+            $gaps++;
          }
+      }
+
+      if (@description) {
+         $self->{article}{F}[$index] =
+           (sort { $b->{score} <=> $a->{score} || $a->{impure} <=> $b->{impure} || $b->{jaro} <=> $a->{jaro} } @description)
+           [0];
+         $self->{article}{F}[$index++]{long} = $paragraph;
       }
    }
 
