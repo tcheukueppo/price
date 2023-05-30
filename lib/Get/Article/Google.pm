@@ -111,7 +111,7 @@ sub _get_text {
      ->child_nodes
      ->map($get_text)
      ->compact
-     ->join(' ') =~ s/^\s+//r =~ s/\s+$//r =~ s/\s{2,}/ /gr;    # Beautify!
+     ->join(' ') =~ s/^\s+//r =~ s/\s+$//r =~ s/\s{2,}/ /gr; # Beautify!
 
    return $text;
 }
@@ -122,22 +122,19 @@ sub get_contents {
 
    return unless $link;
 
-   print "link is $link\n";
-
    #$link = 'https://dir.indiamart.com/impcat/hp-computer-monitor.html';
-   my $tx = $self->{ua}->get($link);
-   return 0 unless $tx->result->is_success;
+   my $res = $self->{ua}->get($link)->result;
+   return 0 unless $res->is_success;
 
    my $content;
    my $index = 0;
-   foreach my $node ($tx->result->dom->find('div, p')->each) {
+   foreach my $node ($res->dom->find('div, p')->each) {
       my $text = _get_text($node);
 
       next unless "$text";
 
-      $content->[$index]{id}   = refaddr($node);
       $content->[$index]{text} = ref $text ? $text->to_string : $text;
-      $content->[$index]{name} = $node->tag;
+      $content->[$index]{lang} = $res->dom->at('html')->attr('lang') // 'en';
 
       $index++;
    }

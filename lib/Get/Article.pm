@@ -128,7 +128,6 @@ sub _nfkd_normalize {
 sub _get_price {
    my $description = shift;
 
-   print "on $description\n";
    my $price;
    push @$price, [$+{c}, $+{u}] while $description =~ /$MONEY_RE/g;
    return $price;
