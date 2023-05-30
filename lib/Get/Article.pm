@@ -19,8 +19,10 @@ my $NUMERIC  = qr/( [-+]? (?:\d+(?: [.]\d* )?|[.]\d+) ) (?: :[eE] ([-+]? (?:\d+)
 my $MONEY_RE = do {
    local $" = '|';
    my @syms = map { quotemeta } keys %$Get::Article::Currency::SYMBOLS;
+   my %inv  = (',' => '.');
+   my
 
-   qr{
+     qr{
       \b
       (?:
          (?<x>(?&x))\s*(?<u>(?&iso)) |
@@ -28,7 +30,10 @@ my $MONEY_RE = do {
       )
       \b
       (?(DEFINE)
-         (?<x>\d+(?:[.,]\d+)?)
+         (?<x>
+            (?:\d+|\d(?:(?<sep>[ ,.])\d{3})+)  # integer
+               (?(<sep>)(?:$inv{$+{sep}}\d+)?) # decimal
+         )
          (?<sym>@syms)
          (?<iso>@Get::Article::Currency::CODES)
       )
@@ -45,7 +50,6 @@ sub new {
      $_[0];
 }
 
-# Accessors
 sub article {
    $_[0]->{article}{name} = $_[1] // return $_[0]->{article}{name};
    return $_[0];
@@ -71,7 +75,6 @@ sub _jaro {
 
    my $match_distance = (max($s_len, $t_len) / 2) - 1;
 
-   # Find number of matches based on $match_distance condition
    my $n_matches = 0;
    foreach my $i (0 .. $#s) {
 
@@ -88,7 +91,6 @@ sub _jaro {
 
    return 0 unless $n_matches;
 
-   # Find number of transpositions
    my ($k, $transposition) = (0, 0);
    foreach my $i (0 .. $#s) {
       $s_matches[$i] or next;
@@ -176,7 +178,6 @@ sub search_article {
 
             my $got_token = (sort { $b->[1] <=> $a->[1] } map { [$_, _jaro_winkler($_, $word)] } @tokens)[0];
             if ($got_token and $got_token->[1] >= $configs->{jaro} and !exists $passed{$got_token->[0]}) {
-               say "look jaro: $got_token->[1], on $word <=> $got_token->[0]";
                $passed{$got_token->[0]} = 1;
                $total_jaro += $got_token->[1];
                $impure     += $impure_value;
@@ -185,7 +186,6 @@ sub search_article {
             }
 
             if (($score / @tokens) * 100 >= $configs->{token_perc}) {
-               say "total jaro: $total_jaro", $score, @tokens;
                push @description,
                  {
                   short  => $sentence,
@@ -196,9 +196,7 @@ sub search_article {
                next;
             }
 
-            # Dist btw tokens measures how much involved the article is in the sentence.
-            #if (0) {
-            if ($gaps > $configs->{token_dist} and defined($score)) {
+            if (defined($score) and $gaps > $configs->{token_dist}) {
                %passed = ();
                $score  = $gaps = $impure_value = $total_jaro = 0;
                next;

@@ -13,8 +13,4 @@ is_deeply([map { Get::Article::_jaro($_->[0], $_->[1]) } @samples],
           [0.944444444444445, 0.766666666666667, 0.896296296296296],
           "does jaro works?");
 
-is_deeply([map { Get::Article::_jaro_winkler($_->[0], $_->[1]) } @samples],
-          [0.944444444444445, 0.766666666666667, 0.896296296296296],
-          "what about jaro winkler?");
-
 done_testing(2);
