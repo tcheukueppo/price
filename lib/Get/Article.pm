@@ -3,7 +3,7 @@ package Get::Article;
 use strict;
 use warnings;
 use utf8;
-use feature qw(fc);
+use feature qw(fc say);
 
 use Carp       qw(croak);
 use List::Util qw(min max);
@@ -125,6 +125,7 @@ sub search_article {
    my $self = shift;
    my $configs = {
                   token_dist => 2,
+                  mark_token => 0,   # 1 to use marked tokens, 0 for all tokens
                   jaro       => 0.8,
                   nkfd       => 1,
                   price      => 0,
@@ -136,15 +137,15 @@ sub search_article {
       $configs->{$key} = $args{$key};
    }
 
-   my @tokens = grep { length } split /\s+/, fc $self->{article}{name};
+   my @tokens = map { $configs->{mark_token} ? /\*(.+)\*/ ? $1 : () : $_ } grep { length } split /\s+/,
+     fc $self->{article}{name};
+
    foreach my $paragraph (@{$self->{contents}}) {
       my $index = 0;
 
       while ($paragraph =~ /\G\s*(.+?\b{wb}(?:[.]|(?=\s+\Z))\b{wb})\s*/gs) {
          my $sentence = $1;
-         my @description;
-
-         # Parameters for selection
+         my (@description, %passed);
          my ($score, $impure, $gaps, $total_jaro) = (0, 0, 0, 0);
 
        TOKEN: while ($sentence =~ /\G\s*(.+?)\b{wb}\s*/gcs) {
@@ -159,12 +160,12 @@ sub search_article {
                   impure => $impure,
                   jaro   => $total_jaro,
                  }
-                 if $score;
+                 if $score == @tokens;
                last;
             }
 
             # Punctuation chars
-            next if $token =~ /^\p{Punct}+$/;
+            next if $token =~ /^\p{P}+$/;
 
             # Token is a numerical value and is treated based
             # on its unit of measurement.
@@ -177,30 +178,39 @@ sub search_article {
 
                      next unless $unit eq $valid_unit;
                      next unless $exp eq $valid_exp;
-                     $score++, last if $value eq $valid_value;
+                     if ($value eq $valid_value and !exists $passed{$_}) {
+                        $score++;
+                        $passed{$_} = 1;
+                        last;
+                     }
                   }
                }
                next;
             }
 
-            my $matched;
             my $impure_value = 0;
-
             ($token, $impure_value) = _nfkd_normalize($token) if $configs->{nfkd};
 
-            $matched = (sort { $b->[1] <=> $a->[1] } map { [$_, _jaro_winkler($_, $token)] } @tokens)[0];
-            if ($matched and $matched->[1] >= $configs->{jaro}) {
-               $score++;
-               $total_jaro += $matched->[1];
+            my $got_token = (sort { $b->[1] <=> $a->[1] } map { [$_, _jaro_winkler($_, $token)] } @tokens)[0];
+            if ($got_token and $got_token->[1] >= $configs->{jaro} and !exists $passed{$got_token->[0]}) {
+#               say Dumper {
+#                           para    => $paragraph,
+#                           matched => $got_token->[0],
+#                           jaro    => $got_token->[1],
+#                          };
+               say "look jaro: $got_token->[1], on $token <=> $got_token->[0]";
+               $passed{$got_token->[0]} = 1;
+               $total_jaro += $got_token->[1];
                $impure     += $impure_value;
+               $score++;
                next;
             }
 
             # Dist btw tokens measures how much involved the article is in the sentence.
             #if (0) {
-            if ($gaps > $configs->{token_dist} and defined($score) and $score == 1) {
-               $score = 0;
-               $gaps  = 0;
+            if ($gaps > $configs->{token_dist} and defined($score) and $score > 1) {
+               %passed = ();
+               $score  = $gaps = $impure_value = $total_jaro = 0;
             }
             else {
                $gaps++;
@@ -209,10 +219,10 @@ sub search_article {
 
          # Pick the best description
          if (@description) {
-            $self->{article}{F}[$index]{long} = $paragraph;
-            $self->{article}{F}[$index++] =
+            $self->{article}{F}[$index] =
               (sort { $b->{score} <=> $a->{score} || $a->{impure} <=> $b->{impure} || $a->{jaro} <=> $b->{jaro} } @description)
               [0];
+            $self->{article}{F}[$index++]{long} = $paragraph;
          }
       }
    }

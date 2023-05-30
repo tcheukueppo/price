@@ -19,8 +19,8 @@ use feature qw(say);
 my $NO_GOOGLE   = qr{https://(?!(?>\w+\.)*google\.com)};
 my $TARGET_LINK = qr{
    (?|
-      imgrefurl   = ((?> [^&]+ ))
-    | (?:q|u) = ( $NO_GOOGLE (?>[^&]+) )
+      imgrefurl = ((?> [^&]+ ))
+    | (?:q|u)   = ( $NO_GOOGLE (?>[^&]+) )
    )
 }x;
 
@@ -71,8 +71,6 @@ sub google {
      ->map(attr => 'href')
      ->compact
      ->grep(qr{^\s*[^#]})
-
-     #->grep($IMAGE_EX)
      ->map(sub { Mojo::URL->new($_)->query })
      ->compact
      ->map(sub { /$TARGET_LINK/ ? $1 : '' })

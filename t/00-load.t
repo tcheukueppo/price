@@ -7,7 +7,7 @@ use Test::More;
 plan tests => 1;
 
 BEGIN {
-    use_ok( 'Get::Price' ) || print "Bail out!\n";
+   use_ok('Get::Article') || print "Bail out!\n";
 }
 
-diag( "Testing Get::Price $Get::Price::VERSION, Perl $], $^X" );
+diag("Testing Get::Article $Get::Article::VERSION, Perl $], $^X");
