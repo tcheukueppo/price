@@ -7,4 +7,32 @@ use warnings;
 
 use Get::Article::App;
 
-Get::Article::App::app
+=encoding utf8
+
+=head1 NAME
+
+price - simple article price and description fetcher
+
+=head1 SYNOPSIS
+
+price [options] article_name
+
+=head1 DESCRIPTION
+
+description here
+
+=head1 OPTIONS
+
+options doc here
+
+=head1 BUGS
+
+Report bugs at C<https://github.com/tcheukueppo/price/issues>.
+
+=head1 AUTHORS
+
+Kueppo Tcheukam - C<tcheukueppo@tutanota.com>
+
+=cut
+
+1;

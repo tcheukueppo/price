@@ -45,8 +45,8 @@ my $MONEY_RE = do {
 
 sub new {
    bless {
-          contents => $_[2],
-          article  => {
+          content => $_[2],
+          article => {
                       name => $_[1]
                      },
          },
@@ -59,12 +59,12 @@ sub article {
 }
 
 sub contents {
-   $_[1] ? push @{$_[0]->{contents}}, @{$_[1]} : return @{$_[0]->{contents}};
+   $_[0]->{content} = $_[1] // return @{$_[0]->{content}};
    return $_[0];
 }
 
 sub rm_contents {
-   delete $_[0]->{contents};
+   delete $_[0]->{content} if exists $_[0]->{content};
 }
 
 sub _jaro {
@@ -138,10 +138,10 @@ sub search_article {
    my $self = shift;
    my $configs = {
                   token_dist => 2,
-                  token_perc => 80,
                   jaro       => 0.8,
-                  nkfd       => 1,
                   price      => 0,
+                  token_perc => 80,
+                  nkfd       => 1,
                  };
 
    my %args = @_;
@@ -150,17 +150,25 @@ sub search_article {
       $configs->{$key} = $args{$key};
    }
 
+   my $found;
    my $index  = 0;
    my @tokens = grep { length } split /\s+/, fc $self->{article}{name};
-   foreach my $paragraph (@{$self->{contents}}) {
 
+   foreach my $paragraph (map { $_->{text} } @{$self->{content}}) {
       my @description;
+
       while ($paragraph =~ /\G\s*(.+?\b{wb}(?:[.?!]+|(?=\s*\z))\b{wb})\s*/g) {
          my %passed;
          my $sentence = $1;
          my ($score, $impure, $gaps, $total_jaro) = (0, 0, 0, 0);
 
          while ($sentence =~ /\G\s*(.+?)\b{wb}\s*/g) {
+
+            if (defined($score) and $gaps > $configs->{token_dist}) {
+               %passed = ();
+               $score  = $gaps = $impure = $total_jaro = 0;
+            }
+
             my $word = fc $1;
 
             next if $word =~ /^\p{P}+$/;
@@ -168,32 +176,30 @@ sub search_article {
             if ($word =~ $NUMERIC) {
                my ($value, $exp, $unit) = ($1, $2 // '', fc $3 // '');
 
-               foreach my $token (@tokens) {
-                  if ($token =~ $NUMERIC) {
-                     my ($valid_value, $valid_exp, $valid_unit) = ($1, $2 // '', fc $3 // '');
+               while (my $token = each @tokens) {
+                  next unless $token =~ $NUMERIC;
+                  my ($valid_value, $valid_exp, $valid_unit) = ($1, $2 // '', fc $3 // '');
 
-                     next unless $unit eq $valid_unit;
-                     next unless $exp eq $valid_exp;
-                     if ($value eq $valid_value and !exists $passed{$_}) {
-                        $score++;
-                        $passed{$_} = 1;
-                        last;
-                     }
+                  if (    $value eq $valid_value
+                      and $exp eq $valid_exp
+                      and $unit eq $valid_unit
+                      and !exists $passed{$_}) {
+                     $score++;
+                     $passed{$_} = 1;
+                     last;
                   }
                }
-               next;
             }
+            else {
+               my ($word, $impure_value) = _nfkd_normalize($word) if $configs->{nfkd};
+               my $got_token = (sort { $b->[1] <=> $a->[1] } map { [$_, _jaro_winkler($_, $word)] } @tokens)[0];
 
-            my $impure_value = 0;
-            ($word, $impure_value) = _nfkd_normalize($word) if $configs->{nfkd};
-
-            my $got_token = (sort { $b->[1] <=> $a->[1] } map { [$_, _jaro_winkler($_, $word)] } @tokens)[0];
-            if ($got_token and $got_token->[1] >= $configs->{jaro} and !exists $passed{$got_token->[0]}) {
-               $passed{$got_token->[0]} = 1;
-               $total_jaro += $got_token->[1];
-               $impure     += $impure_value;
-               $score++;
-               next;
+               if ($got_token and $got_token->[1] >= $configs->{jaro} and !exists $passed{$got_token->[0]}) {
+                  $passed{$got_token->[0]} = 1;
+                  $total_jaro += $got_token->[1];
+                  $impure     += $impure_value;
+                  $score++;
+               }
             }
 
             if (($score / @tokens) * 100 >= $configs->{token_perc}) {
@@ -204,33 +210,21 @@ sub search_article {
                   impure => $impure,
                   jaro   => $total_jaro,
                  };
-               next;
             }
-
-            if (defined($score) and $gaps > $configs->{token_dist}) {
-               %passed = ();
-               $score  = $gaps = $impure_value = $total_jaro = 0;
-               next;
-            }
-
-            $gaps++;
+            else { $gaps++ }
          }
       }
 
       if (@description) {
-         $self->{article}{F}[$index] =
+         $found->[$index] =
            (sort { $b->{score} <=> $a->{score} || $a->{impure} <=> $b->{impure} || $b->{jaro} <=> $a->{jaro} } @description)
            [0];
-         $self->{article}{F}[$index++]{long} = $paragraph;
+         $found->[$index++]{long} = $paragraph;
       }
    }
 
-   if ($configs->{price}) {
-      @{$self->{article}{F}} =
-        map { $_->{price} = _get_price($_->{long}); $_->{price} ? $_ : () } @{$self->{article}{F}};
-   }
-
-   return $self->{article}{F};
+   @$found = map { $_->{price} = _get_price($_->{long}); $_->{price} ? $_ : () } @$found if $configs->{price};
+   return $found;
 }
 
 =encoding utf8
