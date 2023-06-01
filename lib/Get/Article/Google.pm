@@ -85,11 +85,11 @@ sub google {
 }
 
 sub next {
-   $_[0]->{index} == $#{$_[0]->{links}} ? -1 : $_[0]->{index}++;
+   $#{$_[0]->{links}} ? -1 : $_[0]->{links}[++$_[0]->{index}];
 }
 
 sub prev {
-   $_[0]->{index} == 0 ? -1 : $_[0]->{index}--;
+   $_[0]->{index} == 0 ? -1 : $_[0]->{links}[--$_[0]->{index}];
 }
 
 sub _get_text {
@@ -111,7 +111,7 @@ sub _get_text {
      ->child_nodes
      ->map($get_text)
      ->compact
-     ->join(' ') =~ s/^\s+//r =~ s/\s+$//r =~ s/\s{2,}/ /gr; # Beautify!
+     ->join(' ') =~ s/^\s+//r =~ s/\s+$//r =~ s/\s{2,}/ /gr;    # Beautify!
 
    return $text;
 }
@@ -128,17 +128,17 @@ sub get_contents {
 
    my $content;
    my $index = 0;
+
+   $content->{lang} = $res->dom->at('html')->attr('lang') // 'en';
    foreach my $node ($res->dom->find('div, p')->each) {
       my $text = _get_text($node);
 
       next unless "$text";
 
-      $content->[$index]{text} = ref $text ? $text->to_string : $text;
-      $content->[$index]{lang} = $res->dom->at('html')->attr('lang') // 'en';
-
+      push @{$content->{text}}, ref $text ? $text->to_string : $text;
       $index++;
    }
 
-   $content = [c(@$content)->uniq(sub { $_->{text} })->each];
+   $content->{text} = [c(@{$content->{text}})->uniq(sub { $_->{text} })->each];
    return $content;
 }

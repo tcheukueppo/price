@@ -15,6 +15,8 @@ no warnings 'utf8';
 # debug
 use Data::Dumper;
 
+our $REGMARK = '';
+
 my $NUMERIC  = qr/( [-+]? (?:\d+(?: [.]\d* )?|[.]\d+) ) (?: :[eE] ([-+]? (?:\d+)) )? ([^\s]*)/x;
 my $MONEY_RE = do {
    local $" = '|';
@@ -29,7 +31,7 @@ my $MONEY_RE = do {
       \b{wb}
       (?:
          (?<c>(?&x)) \s* (?<u>(?&iso)) |
-         (?<u>(?&sym))? \s* (?<c>(?&x)) \s* (?(<u>)|(?<u>(?&sym)))
+         (?<u>(?&sym)(*MARK:front))? \s* (?<c>(?&x)) \s* (?(<u>)|(?<u>(?&sym)))
       )
       \b{wb}
       (?(DEFINE)
@@ -127,10 +129,9 @@ sub _nfkd_normalize {
 
 sub _get_price {
    my $description = shift;
+   my $price = [$+{c}, $+{u}, $REGMARK eq 'front' ? 1 : 0] if $description =~ /\G.*?$MONEY_RE/g;
 
-   my $price;
-   push @$price, [$+{c}, $+{u}] while $description =~ /$MONEY_RE/g;
-   return $price;
+   return $description !~ /\G.*?$MONEY_RE/g ? $price : 0;
 }
 
 sub search_article {
@@ -154,7 +155,7 @@ sub search_article {
    my $index  = 0;
    my @tokens = grep { length } split /\s+/, fc $self->{article}{name};
 
-   foreach my $paragraph (map { $_->{text} } @{$self->{content}}) {
+   foreach my $paragraph (@{$self->{content}}) {
       my @description;
 
       while ($paragraph =~ /\G\s*(.+?\b{wb}(?:[.?!]+|(?=\s*\z))\b{wb})\s*/g) {
