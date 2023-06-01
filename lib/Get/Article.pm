@@ -129,7 +129,7 @@ sub _nfkd_normalize {
 
 sub _get_price {
    my $description = shift;
-   my $price = [$+{c}, $+{u}, $REGMARK eq 'front' ? 1 : 0] if $description =~ /\G.*?$MONEY_RE/g;
+   my $price       = [$+{c}, $+{u}, $REGMARK eq 'front' ? 1 : 0] if $description =~ /\G.*?$MONEY_RE/g;
 
    return $description !~ /\G.*?$MONEY_RE/g ? $price : 0;
 }
@@ -165,7 +165,7 @@ sub search_article {
 
          while ($sentence =~ /\G\s*(.+?)\b{wb}\s*/g) {
 
-            if (defined($score) and $gaps > $configs->{token_dist}) {
+            if ($score > 0 and $gaps > $configs->{token_dist}) {
                %passed = ();
                $score  = $gaps = $impure = $total_jaro = 0;
             }
@@ -181,10 +181,10 @@ sub search_article {
                   next unless $token =~ $NUMERIC;
                   my ($valid_value, $valid_exp, $valid_unit) = ($1, $2 // '', fc $3 // '');
 
-                  if (    $value eq $valid_value
-                      and $exp eq $valid_exp
-                      and $unit eq $valid_unit
-                      and !exists $passed{$_}) {
+                  if (   $value eq $valid_value
+                      && $exp eq $valid_exp
+                      && $unit eq $valid_unit
+                      && !exists $passed{$_}) {
                      $score++;
                      $passed{$_} = 1;
                      last;
@@ -195,7 +195,7 @@ sub search_article {
                my ($word, $impure_value) = _nfkd_normalize($word) if $configs->{nfkd};
                my $got_token = (sort { $b->[1] <=> $a->[1] } map { [$_, _jaro_winkler($_, $word)] } @tokens)[0];
 
-               if ($got_token and $got_token->[1] >= $configs->{jaro} and !exists $passed{$got_token->[0]}) {
+               if ($got_token && $got_token->[1] >= $configs->{jaro} && !exists $passed{$got_token->[0]}) {
                   $passed{$got_token->[0]} = 1;
                   $total_jaro += $got_token->[1];
                   $impure     += $impure_value;

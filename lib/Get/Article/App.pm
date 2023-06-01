@@ -12,6 +12,7 @@ use Term::ANSIColor;
 
 use Get::Article;
 use Get::Article::Exchange;
+use Get::Article::Currency;
 use Get::Article::Google;
 
 use Mojo::UserAgent;
@@ -35,7 +36,7 @@ my $options = {
                           websites   => 4,
                           contents   => 5,
                           color      => 1,
-                          retries    => 2,
+                          retries    => 3,
                           currency   => '',
                          },
                mojo_ua => {
@@ -54,8 +55,14 @@ my $die = sub {
 my $warn = sub {
    print STDERR color('red') if $options->{others}{color};
    warn "$0: $_[0]\n";
-   print color('reset');
+   print color("reset") if $options->{others}{color};
 };
+
+sub info {
+   print STDERR color('green') if $options->{others}{color};
+   warn "$_[0]\n";
+   print color("reset") if $options->{others}{color};
+}
 
 sub proxy {
    $_[1] =~ m{^socks://[^:]+(?::\d+)?$} or $die->('invalid proxy url');
@@ -94,18 +101,25 @@ GetOptions(
           )
   or pod2usage(1);
 
+$options->{others}{help} and pod2usage(1);
 @ARGV or $die->('please specify an article name');
 
 my $lang_re = do {
    local $" = '|';
-   my @dot = qw();
+   my @dot = qw(
+     ak am ar az bs ca zh cs da nl en et
+     fi fr ka de el he hi hu is id it ja
+     kn kk km ko ku lv lt mk ms ml mt mr
+     mn no fa pl pt ro ru sr sk sl es sw
+     sv ta te th tr uk ur vi cy
+   );
 
-   qr{^(?:@dots)$};
+   qr{^(?:@dot)$};
 };
 
 my $ua      = Mojo::UserAgent->new;
 my $google  = Get::Article::Google->new($ua);
-my $article = Get::Article->new;
+my $art     = Get::Article->new;
 
 length $options->{mojo_ua}{$_} and $ua->$_($options->{mojo_ua}{$_}) foreach keys %{$options->{mojo_ua}};
 $options->{others}{retries} = 3 if $options->{others}{retries} < 0;
@@ -113,7 +127,8 @@ $options->{others}{retries} = 3 if $options->{others}{retries} < 0;
 ARTICLE: foreach my $article (@ARGV) {
    my $tries = -1;
 
-   $article->article($article);
+   $art->article($article);
+   info("[article] working on '$article'") if $options->{others}{verbose};
    do {
       my $status = 0;
       eval { $status = $google->google($article, $options->{others}{websites} <= 0 ? 4 : $options->{others}{websites}) };
@@ -122,20 +137,20 @@ ARTICLE: foreach my $article (@ARGV) {
       $warn->("$@, retrying...");
    } while 1;
 
-   $tries = -1;
  LINK: while ((my $link = $google->next) != -1) {
       my $contents;
 
+      info("[$link]: fetching content") if $options->{others}{verbose};
       do {
          eval { $contents = $google->get_contents };
-         $content ? last : next LINK unless $@;
+         $contents ? last : next LINK unless $@;
          ++$tries == $options->{others}{retries} and exit 1;
          $warn->("$@, retrying...");
       } while 1;
 
       my $lang = $contents->{lang};
-      $article->contents($contents->{text});
-      $contents = $article->search_article(%{$options->{article}});
+      $art->contents($contents->{text});
+      $contents = $art->search_article(%{$options->{article}});
 
       # pick best article description
       my $content = (sort { $b->{jaro} <=> $a->{jaro} || $a->{impure} <=> $b->{impure} } @$contents)[0];
@@ -150,7 +165,9 @@ ARTICLE: foreach my $article (@ARGV) {
           && !exists $Get::Article::Currency::SYMBOLS->{$content->{price}[1]}
           && $content->{price}[1] ne $options->{others}{currency}) {
 
-         $tries               = -1;
+         info("[currency]: converting from '$content->{price}[1]' to '$options->{others}{currency}'")
+           if $options->{others}{verbose};
+
          $content->{price}[1] = $options->{others}{currency};
          $content->{price}[0] = do {
             my $price;
@@ -159,19 +176,18 @@ ARTICLE: foreach my $article (@ARGV) {
                eval { $price = $exchange->convert(@{$content->{price}}, $options->{others}{currency}) };
                last unless $@;
                ++$tries == $options->{others}{retries} and exit 1;
-               $warn->("$@, retrying..");
+               $warn->("$@, retrying...");
             } while 1;
-            $price;
+            $price ? $price : $content->{price}[0];
          };
       }
 
       if ($options->{others}{sql}) {
-         ## ...
+
+         # ...
       }
       else {
-         print "Price: ", color('blue') if $options->{others}{color};
-         sprintf "%.2f %s", @{$content->{price}};
-         print color('reset'), "\n";
+         say Dumper $content;
       }
    }
 }
