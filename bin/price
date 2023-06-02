@@ -10,6 +10,8 @@ use Getopt::Long;
 use Pod::Usage;
 use Term::ANSIColor;
 
+use lib './lib';
+
 use Get::Article;
 use Get::Article::Exchange;
 use Get::Article::Currency;
@@ -86,7 +88,7 @@ GetOptions(
            'h|help'              => \&pod2usage,
            'r|retries=i'         => \$options->{others}{retries},
            'sq|sql-insert=s'     => \$options->{others}{sql},
-           'p|price'             => \$options->{article}{price},
+           'price!'              => \$options->{article}{price},
            'v|precision=i'       => \$options->{article}{token_dist},
            's|sensitive'         => \$options->{article}{nfkd},
            'i|in=s'              => \&currency,
@@ -128,7 +130,7 @@ ARTICLE: foreach my $article (@ARGV) {
    my $tries = -1;
 
    $art->article($article);
-   info("[article] working on '$article'") if $options->{others}{verbose};
+   info("[article]: working on '$article'") if $options->{others}{verbose};
 
    while () {
       my $status = 0;
@@ -157,10 +159,8 @@ ARTICLE: foreach my $article (@ARGV) {
       $art->contents($contents->{text});
       $contents = $art->search_article(%{$options->{article}});
 
-      say Dumper $contents;
-      exit 1;
       # pick best article description
-      my $content = (sort { $b->{jaro} <=> $a->{jaro} || $a->{impure} <=> $b->{impure} } @$contents)[0];
+      my $content = (sort { length($b->{long}) <=> length($a->{long}) || $b->{jaro} <=> $a->{jaro} } @$contents)[0];
       if ($options->{article}{price} && $content->{price}) {
          local *_ = \$content->{price};
          s/\s+/_/g;
@@ -172,7 +172,7 @@ ARTICLE: foreach my $article (@ARGV) {
           && !exists $Get::Article::Currency::SYMBOLS->{$content->{price}[1]}
           && $content->{price}[1] ne $options->{others}{currency}) {
 
-         info("[currency]: converting from '$content->{price}[1]' to '$options->{others}{currency}'")
+         info("[currency]: from '$content->{price}[1]' to '$options->{others}{currency}'")
            if $options->{others}{verbose};
 
          $content->{price}[1] = $options->{others}{currency};

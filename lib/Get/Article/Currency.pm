@@ -16,39 +16,40 @@ package Get::Article::Currency;
 
 # CURRENCY SYMBOLS
 $SYMBOLS = {
-   map { $_ => 0 }
-     qw(
-      Le Q
-      DH D
-      QR Rf
-      R m
-      Rs Dh
-      Leu Lei
-      VT E
-      Bs K
-      soum Fr
-      KM DT
-      G Lev
-      LL LE
-      ID Rl
-      LS Nu
-      RO Shs
-      Ft Sh
-      Ar Db
-      KD UM
-      Br LD
-      SM P
-      kr Ks
-      som L
-      Kz DIN
-      Lek Re
-      JD BD
-      DA Nkf
-      Dhs Mt
-      M Rp
-      RM DEN
-      Rls
-     ),
+   do {
+      map { $_ => 0 } qw(
+         Le Q
+         DH D
+         QR Rf
+         R m
+         Rs Dh
+         Leu Lei
+         VT E
+         Bs K
+         soum Fr
+         KM DT
+         G Lev
+         LL LE
+         ID Rl
+         LS Nu
+         RO Shs
+         Ft Sh
+         Ar Db
+         KD UM
+         Br LD
+         SM P
+         kr Ks
+         som L
+         Kz DIN
+         Lek Re
+         JD BD
+         DA Nkf
+         Dhs Mt
+         M Rp
+         RM DEN
+         Rls
+      );
+   },
    map { $_ => 1 } (
       'C$',   '₱',
       '₵',    '₼',

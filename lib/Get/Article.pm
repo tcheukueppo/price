@@ -15,19 +15,20 @@ no warnings 'utf8';
 # debug
 use Data::Dumper;
 
+our $VERSION = '0.01';
 our $REGMARK = '';
 
 my $NUMERIC  = qr/( [-+]? (?:\d+(?: [.]\d* )?|[.]\d+) ) (?: :[eE] ([-+]? (?:\d+)) )? ([^\s]*)/x;
 my $MONEY_RE = do {
    local $" = '|';
-   my (@both, $back);
+   my (@both, @back);
    my %inv = (
                 ',' => qr/[.]/,
                 '.' => ',',
                 ' ' => qr/[,.]/,
              );
 
-   push $_->[0] ? @both : @back, $_->[1]
+   $_->[0] ? push @both, $_->[1] : push @back, $_->[1]
      foreach map { [$Get::Article::Currency::SYMBOLS->{$_}, quotemeta] } keys %$Get::Article::Currency::SYMBOLS;
 
    qr~
@@ -121,10 +122,7 @@ sub _jaro_winkler {
 }
 
 sub _nfkd_normalize {
-   my $impurities;
-   my $ascii_string = join '', map { $impurities += length() - 1; substr($_, 0, 1) } map { NFKD($_) } split //, $_[0];
-
-   ($ascii_string, $impurities);
+   return join '', map { substr($_, 0, 1) } map { NFKD($_) } split //, $_[0];
 }
 
 sub _get_price {
@@ -161,14 +159,16 @@ sub search_article {
 
       while ($paragraph =~ /\G\s*(.+?\b{wb}(?:[.?!]+|(?=\s*\z))\b{wb})\s*/g) {
          my $sentence = $1;
+         my $gaps = 0;
          my (%passed, %param);
 
-         $param{$_} = 0 foreach qw(score impure gaps jaro);
+         $param{$_} = 0 foreach qw(score jaro);
          while ($sentence =~ /\G\s*(.+?)\b{wb}\s*/g) {
 
-            if ($param{score} > 1 and $param{gaps} > $configs->{token_dist}) {
+            if ($param{score} > 1 and $gaps > $configs->{token_dist}) {
                %passed = ();
-               $param{$_} = 0 foreach qw(score impure gaps jaro);
+               $param{$_} = 0 foreach qw(score jaro);
+               $gaps = 0;
             }
 
             my $word = fc $1;
@@ -191,34 +191,30 @@ sub search_article {
                   ++$param{score} and last;
                }
 
-               $param{gaps}++ if $score == $param{score};
+               $gaps++ if $score == $param{score};
             }
             else {
-               my $impure_value = 0;
-               ($word, $impure_value) = _nfkd_normalize($word) if $configs->{nfkd};
+               $word = _nfkd_normalize($word) if $configs->{nfkd};
 
                my $matched = (sort { $b->[1] <=> $a->[1] } map { [$_, _jaro_winkler($_, $word)] } @tokens)[0];
                if ($matched && $matched->[1] >= $configs->{jaro} && !exists $passed{$matched->[0]}) {
                   $passed{$matched->[0]} = 1;
                   $param{score}++;
-                  $param{jaro}   += $matched->[1];
-                  $param{impure} += $impure_value;
+                  $param{jaro} += $matched->[1];
                }
                else {
-                  $param{gaps}++;
+                  $gaps++;
                }
             }
 
             if (($param{score} / @tokens) * 100 >= $configs->{token_perc}) {
-               push @description, {%param{qw(score impure jaro)}, short => $sentence};
+               push @description, {%param{qw(score jaro)}, short => $sentence};
             }
          }
       }
 
       if (@description) {
-         $found->[$index] =
-           (sort { $b->{score} <=> $a->{score} || $a->{impure} <=> $b->{impure} || $b->{jaro} <=> $a->{jaro} } @description)
-           [0];
+         $found->[$index] = (sort { $b->{score} <=> $a->{score} || $b->{jaro} <=> $a->{jaro} } @description)[0];
          $found->[$index++]{long} = $paragraph;
       }
    }
@@ -236,10 +232,6 @@ Get::Price - The great new Get::Price!
 =head1 VERSION
 
 Version 0.01
-
-=cut
-
-our $VERSION = '0.01';
 
 =head1 SYNOPSIS
 
