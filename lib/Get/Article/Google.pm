@@ -85,11 +85,34 @@ sub google {
 }
 
 sub next {
-   $#{$_[0]->{links}} ? -1 : $_[0]->{links}[++$_[0]->{index}];
+   $#{$_[0]->{links}} == $_[0]->{index} ? '' : $_[0]->{links}[++$_[0]->{index}];
 }
 
 sub prev {
-   $_[0]->{index} == 0 ? -1 : $_[0]->{links}[--$_[0]->{index}];
+   $_[0]->{index} == 0 ? '' : $_[0]->{links}[--$_[0]->{index}];
+}
+
+sub get_contents {
+   my $self = shift;
+   my $link = $self->{links} && $self->{links}[++$self->{index}];
+
+   return unless $link;
+
+   #$link = 'https://dir.indiamart.com/impcat/hp-computer-monitor.html';
+   my $res = $self->{ua}->get($link)->result;
+   return 0 unless $res->is_success;
+
+   my $content;
+   $content->{lang} = $res->dom->at('html')->attr('lang') // 'en';
+   foreach my $node ($res->dom->find('div, p')->each) {
+      my $text = _get_text($node);
+
+      next unless "$text";
+      push @{$content->{text}}, ref $text ? $text->to_string : $text;
+   }
+
+   $content->{text} = [c(@{$content->{text}})->uniq->each];
+   return $content;
 }
 
 sub _get_text {
@@ -114,31 +137,4 @@ sub _get_text {
      ->join(' ') =~ s/^\s+//r =~ s/\s+$//r =~ s/\s{2,}/ /gr;    # Beautify!
 
    return $text;
-}
-
-sub get_contents {
-   my $self = shift;
-   my $link = $self->{links} && $self->{links}[++$self->{index}];
-
-   return unless $link;
-
-   #$link = 'https://dir.indiamart.com/impcat/hp-computer-monitor.html';
-   my $res = $self->{ua}->get($link)->result;
-   return 0 unless $res->is_success;
-
-   my $content;
-   my $index = 0;
-
-   $content->{lang} = $res->dom->at('html')->attr('lang') // 'en';
-   foreach my $node ($res->dom->find('div, p')->each) {
-      my $text = _get_text($node);
-
-      next unless "$text";
-
-      push @{$content->{text}}, ref $text ? $text->to_string : $text;
-      $index++;
-   }
-
-   $content->{text} = [c(@{$content->{text}})->uniq(sub { $_->{text} })->each];
-   return $content;
 }

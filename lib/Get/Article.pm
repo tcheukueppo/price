@@ -65,10 +65,6 @@ sub contents {
    return $_[0];
 }
 
-sub rm_contents {
-   delete $_[0]->{content} if exists $_[0]->{content};
-}
-
 sub _jaro {
    my ($s, $t) = @_;
 
@@ -104,7 +100,7 @@ sub _jaro {
       ++$k;
    }
 
-   # return the probability match
+   # return the match probability
    (($n_matches / $s_len) + ($n_matches / $t_len) + (1 - $transposition / (2 * $n_matches))) / 3;
 }
 
@@ -142,7 +138,7 @@ sub search_article {
                   jaro       => 0.8,
                   price      => 0,
                   token_perc => 80,
-                  nkfd       => 1,
+                  nfkd       => 1,
                  };
 
    my %args = @_;
@@ -155,64 +151,63 @@ sub search_article {
    my $index  = 0;
    my @tokens = grep { length } split /\s+/, fc $self->{article}{name};
 
+   @tokens = map { (_nfkd_normalize($_))[0] } @tokens if $configs->{nfkd};
    foreach my $paragraph (@{$self->{content}}) {
       my @description;
 
       while ($paragraph =~ /\G\s*(.+?\b{wb}(?:[.?!]+|(?=\s*\z))\b{wb})\s*/g) {
-         my %passed;
          my $sentence = $1;
-         my ($score, $impure, $gaps, $total_jaro) = (0, 0, 0, 0);
+         my (%passed, %param);
 
+         $param{$_} = 0 foreach qw(score impure gaps jaro);
          while ($sentence =~ /\G\s*(.+?)\b{wb}\s*/g) {
 
-            if ($score > 0 and $gaps > $configs->{token_dist}) {
+            if ($param{score} > 1 and $param{gaps} > $configs->{token_dist}) {
                %passed = ();
-               $score  = $gaps = $impure = $total_jaro = 0;
+               $param{$_} = 0 foreach qw(score impure gaps jaro);
             }
 
             my $word = fc $1;
 
             next if $word =~ /^\p{P}+$/;
-
             if ($word =~ $NUMERIC) {
+               my $score = $param{score};
                my ($value, $exp, $unit) = ($1, $2 // '', fc $3 // '');
 
-               while (my $token = each @tokens) {
+               foreach my $token (@tokens) {
                   next unless $token =~ $NUMERIC;
                   my ($valid_value, $valid_exp, $valid_unit) = ($1, $2 // '', fc $3 // '');
 
-                  if (   $value eq $valid_value
-                      && $exp eq $valid_exp
-                      && $unit eq $valid_unit
-                      && !exists $passed{$_}) {
-                     $score++;
-                     $passed{$_} = 1;
-                     last;
-                  }
+                  next
+                    unless $value eq $valid_value
+                    && $exp eq $valid_exp
+                    && $unit eq $valid_unit
+                    && !exists $passed{$_};
+                  $passed{$_} = 1;
+                  ++$param{score} and last;
                }
+
+               $param{gaps}++ if $score == $param{score};
             }
             else {
-               my ($word, $impure_value) = _nfkd_normalize($word) if $configs->{nfkd};
-               my $got_token = (sort { $b->[1] <=> $a->[1] } map { [$_, _jaro_winkler($_, $word)] } @tokens)[0];
+               my $impure_value = 0;
+               ($word, $impure_value) = _nfkd_normalize($word) if $configs->{nfkd};
 
-               if ($got_token && $got_token->[1] >= $configs->{jaro} && !exists $passed{$got_token->[0]}) {
-                  $passed{$got_token->[0]} = 1;
-                  $total_jaro += $got_token->[1];
-                  $impure     += $impure_value;
-                  $score++;
+               my $matched = (sort { $b->[1] <=> $a->[1] } map { [$_, _jaro_winkler($_, $word)] } @tokens)[0];
+               if ($matched && $matched->[1] >= $configs->{jaro} && !exists $passed{$matched->[0]}) {
+                  $passed{$matched->[0]} = 1;
+                  $param{score}++;
+                  $param{jaro}   += $matched->[1];
+                  $param{impure} += $impure_value;
+               }
+               else {
+                  $param{gaps}++;
                }
             }
 
-            if (($score / @tokens) * 100 >= $configs->{token_perc}) {
-               push @description,
-                 {
-                  short  => $sentence,
-                  score  => $score,
-                  impure => $impure,
-                  jaro   => $total_jaro,
-                 };
+            if (($param{score} / @tokens) * 100 >= $configs->{token_perc}) {
+               push @description, {%param{qw(score impure jaro)}, short => $sentence};
             }
-            else { $gaps++ }
          }
       }
 
