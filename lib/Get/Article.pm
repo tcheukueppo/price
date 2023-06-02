@@ -20,18 +20,21 @@ our $REGMARK = '';
 my $NUMERIC  = qr/( [-+]? (?:\d+(?: [.]\d* )?|[.]\d+) ) (?: :[eE] ([-+]? (?:\d+)) )? ([^\s]*)/x;
 my $MONEY_RE = do {
    local $" = '|';
-   my @syms = map { quotemeta } keys %$Get::Article::Currency::SYMBOLS;
+   my (@both, $back);
    my %inv = (
-              ' ' => qr/[,.]/,
-              ',' => qr/\./,
-              '.' => ',',
+                ',' => qr/[.]/,
+                '.' => ',',
+                ' ' => qr/[,.]/,
              );
+
+   push $_->[0] ? @both : @back, $_->[1]
+     foreach map { [$Get::Article::Currency::SYMBOLS->{$_}, quotemeta] } keys %$Get::Article::Currency::SYMBOLS;
 
    qr~
       \b{wb}
       (?:
-         (?<c>(?&x)) \s* (?<u>(?&iso)) |
-         (?<u>(?&sym)(*MARK:front))? \s* (?<c>(?&x)) \s* (?(<u>)|(?<u>(?&sym)))
+         (?<c>(?&x)) \s* (?<u>(?&iso)|(?&back)) |
+         (?<u>(?&both)(*MARK:front))? \s* (?<c>(?&x)) \s* (?(<u>)|(?<u>(?&both)))
       )
       \b{wb}
       (?(DEFINE)
@@ -39,7 +42,8 @@ my $MONEY_RE = do {
             (?: \d{1,3} (?<sep>[ ,.])\d{3} (?>(?:\g{sep}\d{3})*) | \d+ ) # integer
             (?:(??{ $inv{$+{sep} // ' '} })\d+)? # decimal
          )
-         (?<sym>@syms)
+         (?<back>@back)
+         (?<both>@both)
          (?<iso>@Get::Article::Currency::CODES)
       )
    ~x

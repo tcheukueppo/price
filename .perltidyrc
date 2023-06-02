@@ -23,7 +23,7 @@
 --closing-token-indentation=1
 --line-up-parentheses
 --continuation-indentation=2
-#--extended-continuation-indentation
+--extended-continuation-indentation
 --add-newlines
 
 --indent-columns=3
@@ -32,5 +32,5 @@
 --break-at-old-method-breakpoints
 #--format-skipping
 #--code-skipping
---maximum-fields-per-table=4
+--maximum-fields-per-table=2
 --comma-arrow-breakpoints=4
