@@ -21,22 +21,20 @@ our $REGMARK = '';
 my $NUMERIC  = qr/( [-+]? (?:\d+(?: [.]\d* )?|[.]\d+) ) (?: [eE] ([-+]? (?:\d+)) )? ([^\s]*)/x;
 my $MONEY_RE = do {
    local $" = '|';
-   my (@both, @back);
+
+   my @symbols = map { quotemeta } keys %$Get::Article::Currency::SYMBOLS;
+   my @codes   = keys %Get::Article::Currency::CODES;
    my %inv = (
                 ',' => qr/[.]/,
                 '.' => ',',
                 ' ' => qr/[,.]/,
              );
 
-   $_->[0] ? push @both, $_->[1] : push @back, $_->[1]
-     foreach map { [$Get::Article::Currency::SYMBOLS->{$_}, quotemeta] } keys %$Get::Article::Currency::SYMBOLS;
-
    qr~
       \b{wb}
       (?:
-         #(?<c>(?&x)) \s* (?<u>(?&iso)|(?&back)) |
          (?<c>(?&x)) \s* (?<u>(?&iso)) |
-         (?<u>(?&both)(*MARK:front))? \s* (?<c>(?&x)) \s* (?(<u>)|(?<u>(?&both)))
+         (?<u>(?&sym)(*MARK:front))? \s* (?<c>(?&x)) \s* (?(<u>)|(?<u>(?&sym)))
       )
       \b{wb}
       (?(DEFINE)
@@ -44,9 +42,8 @@ my $MONEY_RE = do {
             (?: \d{1,3} (?<sep>[ ,.])\d{3} (?>(?:\g{sep}\d{3})*) | \d+ ) # integer
             (?:(??{ $inv{$+{sep} // ' '} })\d+)? # decimal
          )
-         (?<back>@back)
-         (?<both>@both)
-         (?<iso>@Get::Article::Currency::CODES)
+         (?<iso>@codes)
+         (?<sym>@symbols)
       )
    ~x
 };
@@ -205,7 +202,11 @@ sub search_article {
             }
 
             if ($score < $param{score} && ($param{score} / @tokens) * 100 >= $configs->{token_perc}) {
-               push @description, {short => $sentence, %param};
+               push @description,
+                 {
+                  %param,
+                  short => $sentence,
+                 };
                last;
             }
          }

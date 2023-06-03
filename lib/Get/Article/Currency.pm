@@ -1,7 +1,7 @@
 package Get::Article::Currency;
 
 # OSI CODES
-@CODES = qw(
+our %CODES = map { $_ => 1 } qw(
    RUB AFN EUR ALL GBP DZD AOA XCD ARS AMD AWG SHP AUD AZN BSD BHD
    BDT BBD BYN BZD XOF BMD BTN INR BOB USD BAM BWP BRL BND SGD BGN
    BIF KHR XAF CAD CVE KYD CLP CNY COP KMF CDF NZD CRC CUP ANG CZK
@@ -15,60 +15,51 @@ package Get::Article::Currency;
 );
 
 # CURRENCY SYMBOLS
-$SYMBOLS = {
-   do {
-      map { $_ => 0 } qw(
-         Le Q
-         DH D
-         QR Rf
-         R m
-         Rs Dh
-         Leu Lei
-         VT E
-         Bs K
-         soum Fr
-         KM DT
-         G Lev
-         LL LE
-         ID Rl
-         LS Nu
-         RO Shs
-         Ft Sh
-         Ar Db
-         KD UM
-         Br LD
-         SM P
-         kr Ks
-         som L
-         Kz DIN
-         Lek Re
-         JD BD
-         DA Nkf
-         Dhs Mt
-         M Rp
-         RM DEN
-         Rls
-      );
-   },
-   map { $_ => 1 } (
-      'C$',   '₱',
-      '₵',    '₼',
-      '₺',    'MOP$',
-      'Bs.D', 'B/',
-      '៛',    '₴',
-      '₽',    '₪',
-      '₩',    '₸',
-      '£',    '₭',
-      '؋',    '฿',
-      'T$',   '€',
-      '₹',    '₾',
-      'Kč',   '¥',
-      'S/',   'R$',
-      '₡',    'zł',
-      '৳',    '₫',
-      '₦',    'ƒ',
-      '֏',    '$',
-      'Bs.S', '₮',
-      '₲'
-                   ),
-           };
+our %SYMBOLS = (
+   'C$'   => ['NIO'],
+   '₱'    => ['PHP'],
+   '₵'    => ['GHS'],
+   '₼'    => ['AZN'],
+   '₺'    => ['TRY'],
+   'MOP$' => ['MOP'],
+   'Bs.D' => ['VED'],
+   'B/'   => ['PAB'],
+   '៛'    => ['KHR'],
+   '₴'    => ['UAH'],
+   '₽'    => ['RUB'],
+   '₪'    => ['ILS'],
+   '₩'    => [qw(KPW KRW)],
+   '₸'    => ['KZT'],
+   '£'    => [qw(GBP SHP FKP GIP)],
+   '₭'    => ['LAK'],
+   '؋'    => ['AFN'],
+   '฿'    => ['THB'],
+   'T$'   => ['TOP'],
+   '€'    => ['EUR'],
+   '₹'    => ['INR'],
+   '₾'    => ['GEL'],
+   'Kč'   => ['CZK'],
+   '¥'    => [qw(CNY JPY)],
+   'S/'   => ['PEN'],
+   'R$'   => ['BRL'],
+   '₡'    => ['CRC'],
+   'zł'   => ['PLN'],
+   '৳'    => ['BDT'],
+   '₫'    => ['VND'],
+   '₦'    => ['NGN'],
+   'ƒ'    => [qw(AWG ANG)],
+   '֏'    => ['AMD'],
+   '$'    => [
+        qw(
+           XCD ARS AUD BSD BBD BZD
+           BMD USD BND SGD CAD CVE
+           KYD CLP COP NZD CUP DOP
+           FJD GYD HKD JMD LRD MXN
+           NAD WST SBD SRD TWD TTD
+           UYU
+        )
+   ],
+   'Bs.S' => ['VES'],
+   '₮'    => ['MNT'],
+   '₲'    => ['PYG'],
+);

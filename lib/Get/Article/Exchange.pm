@@ -15,9 +15,6 @@ use Get::Article::Currency;
 
 use Mojo::Util qw(dumper);
 
-my %codes = map { $_ => 1 } @Get::Article::Currency::CODES;
-my $sym   = $Get::Article::Currency::SYMBOLS;
-
 sub new {
    my $url = Mojo::URL
      ->new
@@ -35,7 +32,12 @@ sub new {
 sub convert {
    my ($self, $amount, @unit) = @_;
 
-   $_ = (exists $codes{uc $_} ? uc $_ : exists $sym->{$_} ? $sym->{$_}[0] : return) foreach @unit;
+   $_ = (
+           exists $Get::Article::Currency::CODES{$_}   ? $_
+         : exists $Get::Article::Currency::SYMBOLS{$_} ? $Get::Article::Currency::SYMBOLS{$_}[0]
+         :                                               return -1
+        )
+     foreach map { uc } @unit;
 
    my $date = DateTime->now;
    $self->{url}->query(
@@ -66,8 +68,8 @@ Get::Article::Exchange - Simple realtime currency converter.
 
     my $e = Get::Article::Exchange->new;
 
-    # convert from BGP to FCFA
-    say $e->convert(1000, BGP => '');
+    # convert from BGP to XAF
+    say $e->convert(1000, BGP => 'XAF');
 
     # works with symbols
     say $e->convert(30, USD => '₹');

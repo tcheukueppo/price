@@ -3,6 +3,7 @@
 use strict;
 use warnings;
 use utf8;
+use feature qw(say);
 
 no warnings 'utf8';
 
@@ -20,7 +21,6 @@ use Get::Article::Google;
 use Mojo::UserAgent;
 
 # Debug
-use feature qw(say);
 use Data::Dumper;
 
 my $options = {
@@ -49,22 +49,24 @@ my $options = {
                           },
               };
 
+my $warn = sub {
+   my $string = $_[0];
+
+   $string =~ s/(?::.+)?\s*at.+//s;
+   $string = colored("$string, retrying...", 'red') if $options->{others}{color};
+   warn "$string\n";
+};
+
 my $die = sub {
-   warn "$_[0]\n";
+   $warn->($_[0]);
    pod2usage(1) if $_[1];
    exit 1;
 };
 
-my $warn = sub {
-   print STDERR color('red') if $options->{others}{color};
-   warn "$_[0]\n";
-   print color("reset") if $options->{others}{color};
-};
-
-sub info {
-   print STDERR color('green') if $options->{others}{color};
-   warn "$_[0]\n";
-   print color("reset") if $options->{others}{color};
+sub color_this {
+   my $string = $_[0];
+   $string = colored($string, 'green') if $options->{others}{color};
+   return $string;
 }
 
 sub proxy {
@@ -78,9 +80,8 @@ sub jaro {
 }
 
 sub currency {
-   $_[1] = uc $_[1];
-   grep { $_[1] eq $_ } @Get::Article::Currency::CODES or $die->('unknown currency osi codes');
-   $options->{others}{currency} = $_[1];
+   exists $Get::Article::Currency::CODES{uc $_[1]} or $die->('unknown currency osi codes');
+   $options->{others}{currency} = uc $_[1];
 }
 
 GetOptions(
@@ -110,12 +111,15 @@ $options->{others}{help} and pod2usage(1);
 # langauges using `.' as radix character
 my $lang_re = do {
    local $" = '|';
+
    my @dot = qw(
-      ak am ar az bs ca zh cs da nl en et
-      fi fr ka de el he hi hu is id it ja
-      kn kk km ko ku lv lt mk ms ml mt mr
-      mn no fa pl pt ro ru sr sk sl es sw
+      ak am ar az bs ca zh cs da
+      fi fr ka de el he hi hu is
+      kn kk km ko ku lv lt mk ms
+      mn no fa pl pt ro ru sr sk
       sv ta te th tr uk ur vi cy
+      nl en et id it ja ml mt mr
+      sl es sw
    );
 
    qr{^(?:@dot)$};
@@ -132,7 +136,7 @@ ARTICLE: foreach my $article (@ARGV) {
    my $tries = -1;
 
    $art->article($article);
-   info("[article]: working on '$article'") if $options->{others}{verbose};
+   say color_this("[article]:") . " working on '$article'" if $options->{others}{verbose};
 
    while () {
       my $status = 0;
@@ -141,22 +145,20 @@ ARTICLE: foreach my $article (@ARGV) {
       eval { $status = $google->google($article, $options->{others}{websites}) };
       $status ? last : next ARTICLE unless $@;
 
-      $@ =~ s/(?::.+)?\s*at.+//s;
       ++$tries == $options->{others}{retries} and exit 1;
-      $warn->("$@, retrying...");
+      $warn->($@);
    }
 
  LINK: while (my $link = $google->next) {
       my $contents;
 
-      info("[website]: $link") if $options->{others}{verbose};
+      say color_this("[website]: ") . $link if $options->{others}{verbose};
+
       while () {
          eval { $contents = $google->get_contents };
          $contents ? last : next LINK unless $@;
-
-         $@ =~ s/(?::.+)?\s*at.+//s;
          ++$tries == $options->{others}{retries} and exit 1;
-         $warn->("$@, retrying...");
+         $warn->($@);
       }
 
       my $lang = $contents->{lang};
@@ -165,7 +167,7 @@ ARTICLE: foreach my $article (@ARGV) {
 
       next unless defined $contents;
       my $desc = (
-                  sort { $b->[0] <=> $a->[0] || $b->[1]{jaro} <=> $a->[1]{jaro} || $b->[1]{score} <=> $a->[1]{score} }
+                  sort { $a->[0] <=> $b->[0] || $b->[1]{jaro} <=> $a->[1]{jaro} || $b->[1]{score} <=> $a->[1]{score} }
                   map  { [length($_->{short}), $_] } @$contents
                  )[0][1];
 
@@ -176,44 +178,43 @@ ARTICLE: foreach my $article (@ARGV) {
          $lang =~ $lang_re ? s/,/_/g : s/,/./;
 
          # currency conversion?
-         if (    $options->{others}{currency}
-              && !exists $Get::Article::Currency::SYMBOLS->{$desc->{price}[1]}
-              && $desc->{price}[1] ne $options->{others}{currency}) {
+         if ($options->{others}{currency}) {
+            my $from = $desc->{price};
 
-            info("[currency]: from '$desc->{price}[1]' to '$options->{others}{currency}'")
-              if $options->{others}{verbose};
+            if (exists $Get::Article::Currency::SYMBOLS{$desc->{price}[1]}) {
+               my $codes = $Get::Article::Currency::SYMBOLS{$desc->{price}[1]};
+               $from = @$codes = 1 ? $codes->[0] : undef;
+            }
 
-            $desc->{price}[0] = do {
+            if (defined($from) && $from ne $options->{others}{currency}) {
                my $price;
                my $exchange = Get::Article::Exchange->new($ua);
 
+               say color_this("[currency]: ") . "from '$desc->{price}[1]' to '$options->{others}{currency}'"
+                 if $options->{others}{verbose};
+
                while () {
-                  eval { $price = $exchange->convert(@{$desc->{price}}, $options->{others}{currency}) };
+                  eval { $price = $exchange->convert($desc->{price}->[0], $from, $options->{others}{currency}) };
                   last unless $@;
-
-                  $@ =~ s/(?::.+)?\s*at.+//s;
                   ++$tries == $options->{others}{retries} and exit 1;
-                  $warn->("$@, retrying...");
+                  $warn->($@);
                }
 
-               if ($price == -1) {
-                  $desc->{price}[1] = $options->{others}{currency};
-                  $price;
-               }
-               else {
-                  $desc->{price}[0];
-               }
-            };
+               $desc->{price} = [$price, $options->{others}{currency}] if $price != -1;
+            }
          }
       }
 
       if ($options->{others}{sql}) {
-
-         # ...
+         say "INSERT INTO $options->{others}{sql} () VALUES ()";
       }
       else {
-         say Dumper $desc;
-
+         say color_this("Short Description");
+         say $desc->{short};
+         say color_this("Long Description");
+         say $desc->{long};
+         say color_this("Price: "), $desc->{price}[2] ? @{$desc->{price}}[0, 1] : @{$desc->{price}}[1, 0]
+           if $options->{article}{price};
       }
    }
 }
