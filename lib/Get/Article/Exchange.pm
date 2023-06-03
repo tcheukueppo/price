@@ -45,12 +45,13 @@ sub convert {
                        end_date   => $date->ymd,
                        start_date => $date->subtract(
                                                      days => 1
-                         )->ymd,
+                       )->ymd,
                       );
 
    my $res = $self->{ua}->get("$self->{url}")->result;
 
    return sprintf '%.2f', $amount * $res->json->{response}[0]{average_bid} if $res->is_success and !exists $res->json->{error};
+   return -1;
 }
 
 =encoding utf8

@@ -59,7 +59,7 @@ sub google {
    return unless $article;
 
    $n //= 100;
-   $self->{url}->query(q => $article);
+   $self->{url}->query(q => "price of $article");
 
    my $tx = $self->{ua}->get("$self->{url}");
    return 0 if !$tx->result->is_success;

@@ -18,7 +18,7 @@ use Data::Dumper;
 our $VERSION = '0.01';
 our $REGMARK = '';
 
-my $NUMERIC  = qr/( [-+]? (?:\d+(?: [.]\d* )?|[.]\d+) ) (?: :[eE] ([-+]? (?:\d+)) )? ([^\s]*)/x;
+my $NUMERIC  = qr/( [-+]? (?:\d+(?: [.]\d* )?|[.]\d+) ) (?: [eE] ([-+]? (?:\d+)) )? ([^\s]*)/x;
 my $MONEY_RE = do {
    local $" = '|';
    my (@both, @back);
@@ -34,7 +34,8 @@ my $MONEY_RE = do {
    qr~
       \b{wb}
       (?:
-         (?<c>(?&x)) \s* (?<u>(?&iso)|(?&back)) |
+         #(?<c>(?&x)) \s* (?<u>(?&iso)|(?&back)) |
+         (?<c>(?&x)) \s* (?<u>(?&iso)) |
          (?<u>(?&both)(*MARK:front))? \s* (?<c>(?&x)) \s* (?(<u>)|(?<u>(?&both)))
       )
       \b{wb}
@@ -153,29 +154,31 @@ sub search_article {
    my $index  = 0;
    my @tokens = grep { length } split /\s+/, fc $self->{article}{name};
 
-   @tokens = map { (_nfkd_normalize($_))[0] } @tokens if $configs->{nfkd};
+   @tokens = map { _nfkd_normalize($_) } @tokens if $configs->{nfkd};
    foreach my $paragraph (@{$self->{content}}) {
       my @description;
 
       while ($paragraph =~ /\G\s*(.+?\b{wb}(?:[.?!]+|(?=\s*\z))\b{wb})\s*/g) {
          my $sentence = $1;
-         my $gaps = 0;
+         my $gaps     = 0;
          my (%passed, %param);
 
          $param{$_} = 0 foreach qw(score jaro);
          while ($sentence =~ /\G\s*(.+?)\b{wb}\s*/g) {
 
             if ($param{score} > 1 and $gaps > $configs->{token_dist}) {
-               %passed = ();
+               %passed    = ();
                $param{$_} = 0 foreach qw(score jaro);
-               $gaps = 0;
+               $gaps      = 0;
             }
 
-            my $word = fc $1;
+            my $word  = fc $1;
+            my $score = $param{score};
 
             next if $word =~ /^\p{P}+$/;
+
+            $word = _nfkd_normalize($word) if $configs->{nfkd};
             if ($word =~ $NUMERIC) {
-               my $score = $param{score};
                my ($value, $exp, $unit) = ($1, $2 // '', fc $3 // '');
 
                foreach my $token (@tokens) {
@@ -190,36 +193,37 @@ sub search_article {
                   $passed{$_} = 1;
                   ++$param{score} and last;
                }
-
-               $gaps++ if $score == $param{score};
             }
             else {
-               $word = _nfkd_normalize($word) if $configs->{nfkd};
-
                my $matched = (sort { $b->[1] <=> $a->[1] } map { [$_, _jaro_winkler($_, $word)] } @tokens)[0];
+
                if ($matched && $matched->[1] >= $configs->{jaro} && !exists $passed{$matched->[0]}) {
-                  $passed{$matched->[0]} = 1;
                   $param{score}++;
                   $param{jaro} += $matched->[1];
-               }
-               else {
-                  $gaps++;
+                  $passed{$matched->[0]} = 1;
                }
             }
 
-            if (($param{score} / @tokens) * 100 >= $configs->{token_perc}) {
-               push @description, {%param{qw(score jaro)}, short => $sentence};
+            if ($score < $param{score} && ($param{score} / @tokens) * 100 >= $configs->{token_perc}) {
+               push @description, {short => $sentence, %param};
+               last;
             }
          }
       }
 
       if (@description) {
+         my $len = length($paragraph);
+
          $found->[$index] = (sort { $b->{score} <=> $a->{score} || $b->{jaro} <=> $a->{jaro} } @description)[0];
          $found->[$index++]{long} = $paragraph;
       }
    }
 
-   @$found = map { $_->{price} = _get_price($_->{long}); $_->{price} ? $_ : () } @$found if $configs->{price};
+   if (defined($found) && $configs->{price}) {
+      @$found = map { $_->{price} = _get_price($_->{long}); $_->{price} ? $_ : () } @$found;
+      return @$found ? $found : undef;
+   }
+
    return $found;
 }
 
@@ -227,7 +231,7 @@ sub search_article {
 
 =head1 NAME
 
-Get::Price - The great new Get::Price!
+Get::Article - Search articles
 
 =head1 VERSION
 
@@ -235,19 +239,18 @@ Version 0.01
 
 =head1 SYNOPSIS
 
-Quick summary of what the module does.
+Search descriptions and prices of an article in contents.
 
-Perhaps a little code snippet.
+    use Get::Article;
 
-    use Get::Price;
+    my $a = Get::Article->new('banana', $contents);
 
-    my $foo = Get::Price->new();
-    ...
+    # search article 'banana' in the list of contents in $contents
+    my $found = $a->search_article()
 
-=head1 EXPORT
-
-A list of functions that can be exported.  You can delete this section
-if you don't export anything, such as for a purely object-oriented module.
+    foreach my $desc (@$found) {
+      say "price: $desc->{price}"
+    }
 
 =head1 SUBROUTINES/METHODS
 

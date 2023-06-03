@@ -26,8 +26,8 @@ use Data::Dumper;
 my $options = {
                article => {
                            jaro       => 0.8,
-                           token_dist => 1,
-                           token_perc => 80,
+                           token_dist => 3,
+                           token_perc => 90,
                            nfkd       => 1,
                            price      => 1,
                           },
@@ -50,13 +50,14 @@ my $options = {
               };
 
 my $die = sub {
-   warn "$0: $_[0]\n";
-   pod2usage(1);
+   warn "$_[0]\n";
+   pod2usage(1) if $_[1];
+   exit 1;
 };
 
 my $warn = sub {
    print STDERR color('red') if $options->{others}{color};
-   warn "$0: $_[0]\n";
+   warn "$_[0]\n";
    print color("reset") if $options->{others}{color};
 };
 
@@ -106,14 +107,15 @@ GetOptions(
 $options->{others}{help} and pod2usage(1);
 @ARGV or $die->('please specify an article name');
 
+# langauges using `.' as radix character
 my $lang_re = do {
    local $" = '|';
    my @dot = qw(
-     ak am ar az bs ca zh cs da nl en et
-     fi fr ka de el he hi hu is id it ja
-     kn kk km ko ku lv lt mk ms ml mt mr
-     mn no fa pl pt ro ru sr sk sl es sw
-     sv ta te th tr uk ur vi cy
+      ak am ar az bs ca zh cs da nl en et
+      fi fr ka de el he hi hu is id it ja
+      kn kk km ko ku lv lt mk ms ml mt mr
+      mn no fa pl pt ro ru sr sk sl es sw
+      sv ta te th tr uk ur vi cy
    );
 
    qr{^(?:@dot)$};
@@ -139,6 +141,7 @@ ARTICLE: foreach my $article (@ARGV) {
       eval { $status = $google->google($article, $options->{others}{websites}) };
       $status ? last : next ARTICLE unless $@;
 
+      $@ =~ s/(?::.+)?\s*at.+//s;
       ++$tries == $options->{others}{retries} and exit 1;
       $warn->("$@, retrying...");
    }
@@ -149,8 +152,9 @@ ARTICLE: foreach my $article (@ARGV) {
       info("[website]: $link") if $options->{others}{verbose};
       while () {
          eval { $contents = $google->get_contents };
-
          $contents ? last : next LINK unless $@;
+
+         $@ =~ s/(?::.+)?\s*at.+//s;
          ++$tries == $options->{others}{retries} and exit 1;
          $warn->("$@, retrying...");
       }
@@ -159,35 +163,48 @@ ARTICLE: foreach my $article (@ARGV) {
       $art->contents($contents->{text});
       $contents = $art->search_article(%{$options->{article}});
 
-      # pick best article description
-      my $content = (sort { length($b->{long}) <=> length($a->{long}) || $b->{jaro} <=> $a->{jaro} } @$contents)[0];
-      if ($options->{article}{price} && $content->{price}) {
-         local *_ = \$content->{price};
+      next unless defined $contents;
+      my $desc = (
+                  sort { $b->[0] <=> $a->[0] || $b->[1]{jaro} <=> $a->[1]{jaro} || $b->[1]{score} <=> $a->[1]{score} }
+                  map  { [length($_->{short}), $_] } @$contents
+                 )[0][1];
+
+      if ($options->{article}{price}) {
+         local *_ = \$desc->{price};
+
          s/\s+/_/g;
          $lang =~ $lang_re ? s/,/_/g : s/,/./;
-      }
 
-      # currency conversion?
-      if (   $options->{others}{currency}
-          && !exists $Get::Article::Currency::SYMBOLS->{$content->{price}[1]}
-          && $content->{price}[1] ne $options->{others}{currency}) {
+         # currency conversion?
+         if (    $options->{others}{currency}
+              && !exists $Get::Article::Currency::SYMBOLS->{$desc->{price}[1]}
+              && $desc->{price}[1] ne $options->{others}{currency}) {
 
-         info("[currency]: from '$content->{price}[1]' to '$options->{others}{currency}'")
-           if $options->{others}{verbose};
+            info("[currency]: from '$desc->{price}[1]' to '$options->{others}{currency}'")
+              if $options->{others}{verbose};
 
-         $content->{price}[1] = $options->{others}{currency};
-         $content->{price}[0] = do {
-            my $exchange = Get::Article::Exchange->new($ua);
-            my $price;
+            $desc->{price}[0] = do {
+               my $price;
+               my $exchange = Get::Article::Exchange->new($ua);
 
-            while () {
-               eval { $price = $exchange->convert(@{$content->{price}}, $options->{others}{currency}) };
-               last unless $@;
-               ++$tries == $options->{others}{retries} and exit 1;
-               $warn->("$@, retrying...");
-            }
-            $price ? $price : $content->{price}[0];
-         };
+               while () {
+                  eval { $price = $exchange->convert(@{$desc->{price}}, $options->{others}{currency}) };
+                  last unless $@;
+
+                  $@ =~ s/(?::.+)?\s*at.+//s;
+                  ++$tries == $options->{others}{retries} and exit 1;
+                  $warn->("$@, retrying...");
+               }
+
+               if ($price == -1) {
+                  $desc->{price}[1] = $options->{others}{currency};
+                  $price;
+               }
+               else {
+                  $desc->{price}[0];
+               }
+            };
+         }
       }
 
       if ($options->{others}{sql}) {
@@ -195,7 +212,8 @@ ARTICLE: foreach my $article (@ARGV) {
          # ...
       }
       else {
-         say Dumper $content;
+         say Dumper $desc;
+
       }
    }
 }
