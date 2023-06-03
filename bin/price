@@ -27,7 +27,7 @@ my $options = {
                article => {
                            jaro       => 0.8,
                            token_dist => 3,
-                           token_perc => 90,
+                           token_perc => 80,
                            nfkd       => 1,
                            price      => 1,
                           },
@@ -152,8 +152,7 @@ ARTICLE: foreach my $article (@ARGV) {
  LINK: while (my $link = $google->next) {
       my $contents;
 
-      say color_this("[website]: ") . $link if $options->{others}{verbose};
-
+      say color_this('[website]: ') . $link if $options->{others}{verbose};
       while () {
          eval { $contents = $google->get_contents };
          $contents ? last : next LINK unless $@;
@@ -187,12 +186,11 @@ ARTICLE: foreach my $article (@ARGV) {
             }
 
             if (defined($from) && $from ne $options->{others}{currency}) {
-               my $price;
-               my $exchange = Get::Article::Exchange->new($ua);
-
                say color_this("[currency]: ") . "from '$desc->{price}[1]' to '$options->{others}{currency}'"
                  if $options->{others}{verbose};
 
+               my $price;
+               my $exchange = Get::Article::Exchange->new($ua);
                while () {
                   eval { $price = $exchange->convert($desc->{price}->[0], $from, $options->{others}{currency}) };
                   last unless $@;
@@ -213,7 +211,7 @@ ARTICLE: foreach my $article (@ARGV) {
          say $desc->{short};
          say color_this("Long Description");
          say $desc->{long};
-         say color_this("Price: "), $desc->{price}[2] ? @{$desc->{price}}[0, 1] : @{$desc->{price}}[1, 0]
+         say color_this("Price: "), $desc->{price}[2] ? @{$desc->{price}}[1,0] : @{$desc->{price}}[0,1]
            if $options->{article}{price};
       }
    }

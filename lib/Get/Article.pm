@@ -22,19 +22,19 @@ my $NUMERIC  = qr/( [-+]? (?:\d+(?: [.]\d* )?|[.]\d+) ) (?: [eE] ([-+]? (?:\d+))
 my $MONEY_RE = do {
    local $" = '|';
 
-   my @symbols = map { quotemeta } keys %$Get::Article::Currency::SYMBOLS;
+   # why not quotemeta? ;-)
+   my @symbols = map { s/\./\\./r =~ s/\$/\\\$/r } keys %Get::Article::Currency::SYMBOLS;
    my @codes   = keys %Get::Article::Currency::CODES;
    my %inv = (
                 ',' => qr/[.]/,
                 '.' => ',',
                 ' ' => qr/[,.]/,
              );
-
    qr~
       \b{wb}
       (?:
-         (?<c>(?&x)) \s* (?<u>(?&iso)) |
-         (?<u>(?&sym)(*MARK:front))? \s* (?<c>(?&x)) \s* (?(<u>)|(?<u>(?&sym)))
+         (?<c>(?&x)) \s{0,1} (?<u>(?&iso)) |
+         (?<u>(?&sym)(*MARK:front))? \s{0,1} (?<c>(?&x)) \s{0,1} (?(<u>)|(?<u>(?&sym)))
       )
       \b{wb}
       (?(DEFINE)
@@ -45,7 +45,7 @@ my $MONEY_RE = do {
          (?<iso>@codes)
          (?<sym>@symbols)
       )
-   ~x
+   ~xu
 };
 
 sub new {
@@ -125,9 +125,16 @@ sub _nfkd_normalize {
 
 sub _get_price {
    my $description = shift;
-   my $price       = [$+{c}, $+{u}, $REGMARK eq 'front' ? 1 : 0] if $description =~ /\G.*?$MONEY_RE/g;
 
-   return $description !~ /\G.*?$MONEY_RE/g ? $price : 0;
+   my $price;
+   while ($description =~ /\G.*?$MONEY_RE/gu) {
+
+      next if $+{c} =~ /^[0,.]+$/;
+      $price = [$+{c}, $+{u}, $REGMARK eq 'front' ? 1 : 0];
+      last;
+   }
+
+   return $price;
 }
 
 sub search_article {
@@ -153,7 +160,11 @@ sub search_article {
 
    @tokens = map { _nfkd_normalize($_) } @tokens if $configs->{nfkd};
    foreach my $paragraph (@{$self->{content}}) {
-      my @description;
+      my (@description, $price);
+
+      if ($configs->{price}) {
+         next unless defined($price = _get_price($paragraph));
+      }
 
       while ($paragraph =~ /\G\s*(.+?\b{wb}(?:[.?!]+|(?=\s*\z))\b{wb})\s*/g) {
          my $sentence = $1;
@@ -182,13 +193,13 @@ sub search_article {
                   next unless $token =~ $NUMERIC;
                   my ($valid_value, $valid_exp, $valid_unit) = ($1, $2 // '', fc $3 // '');
 
-                  next
-                    unless $value eq $valid_value
-                    && $exp eq $valid_exp
-                    && $unit eq $valid_unit
-                    && !exists $passed{$_};
-                  $passed{$_} = 1;
-                  ++$param{score} and last;
+                  if (    $value eq $valid_value
+                       && $exp eq $valid_exp
+                       && $unit eq $valid_unit
+                       && !exists $passed{$token}) {
+                     $passed{$token} = 1;
+                     ++$param{score} and last;
+                  }
                }
             }
             else {
@@ -203,26 +214,17 @@ sub search_article {
 
             if ($score < $param{score} && ($param{score} / @tokens) * 100 >= $configs->{token_perc}) {
                push @description,
-                 {
-                  %param,
-                  short => $sentence,
-                 };
+                 {%param, short => $sentence,};
                last;
             }
          }
       }
 
       if (@description) {
-         my $len = length($paragraph);
-
-         $found->[$index] = (sort { $b->{score} <=> $a->{score} || $b->{jaro} <=> $a->{jaro} } @description)[0];
+         $found->[$index]         = (sort { $b->{score} <=> $a->{score} || $b->{jaro} <=> $a->{jaro} } @description)[0];
+         $found->[$index]{price}  = _get_price($found->[$index]{short}) // $price;
          $found->[$index++]{long} = $paragraph;
       }
-   }
-
-   if (defined($found) && $configs->{price}) {
-      @$found = map { $_->{price} = _get_price($_->{long}); $_->{price} ? $_ : () } @$found;
-      return @$found ? $found : undef;
    }
 
    return $found;
@@ -232,7 +234,7 @@ sub search_article {
 
 =head1 NAME
 
-Get::Article - Search articles
+Get::Article - Search article descriptions and prices
 
 =head1 VERSION
 

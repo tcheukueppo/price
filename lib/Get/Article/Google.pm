@@ -16,6 +16,7 @@ use Scalar::Util qw(refaddr);
 use Data::Dumper;
 use feature qw(say);
 
+my $index       = -1;
 my $NO_GOOGLE   = qr{https://(?!(?>\w+\.)*google\.com)};
 my $TARGET_LINK = qr{
    (?|
@@ -28,13 +29,13 @@ my $NESTED_TAGS         = qr/^(?:div|p|span)$/;
 my $TEXT_MODIFIERS_TAGS = do {
    '^(?:' . join(
       '|', qw(
-        h1 h2 h3 h4 h5 h6 big
-        a abbr b bdi bdo cite
-        del dfn em i ins kbd acronym
-        data label mark meter tt
-        output progress q ruby
-        s samp slot small strong
-        sub sup time u var wbr
+         h1 h2 h3 h4 h5 h6 big
+         a abbr b bdi bdo cite
+         del dfn em i ins kbd acronym
+         data label mark meter tt
+         output progress q ruby
+         s samp slot small strong
+         sub sup time u var wbr
         )
      )
      . ')$';
@@ -44,10 +45,10 @@ sub new {
    bless {
           ua  => $_[1] // Mojo::UserAgent->new(),
           url => Mojo::URL
-            ->new
-            ->scheme('https')
-            ->host('www.google.com')
-            ->path('/search')
+          ->new
+          ->scheme('https')
+          ->host('www.google.com')
+          ->path('/search')
          },
      $_[0];
 }
@@ -59,7 +60,7 @@ sub google {
    return unless $article;
 
    $n //= 100;
-   $self->{url}->query(q => "price of $article");
+   $self->{url}->query(q => "prix de $article");
 
    my $tx = $self->{ua}->get("$self->{url}");
    return 0 if !$tx->result->is_success;
@@ -79,22 +80,23 @@ sub google {
      ->shuffle
      ->head($n);
 
-   $self->{index} = 0;
+   $index = -1;
    $self->{links} = [$c->each];
+   say Dumper $self->{links};
    return 1;
 }
 
 sub next {
-   $#{$_[0]->{links}} == $_[0]->{index} ? '' : $_[0]->{links}[++$_[0]->{index}];
+   $#{$_[0]->{links}} == $index ? '' : $_[0]->{links}[++$index];
 }
 
 sub prev {
-   $_[0]->{index} == 0 ? '' : $_[0]->{links}[--$_[0]->{index}];
+   $index == 0 ? '' : $_[0]->{links}[--$index];
 }
 
 sub get_contents {
    my $self = shift;
-   my $link = $self->{links} && $self->{links}[++$self->{index}];
+   my $link = $self->{links} && $self->{links}[$index == -1 ? ++$index : $index];
 
    return unless $link;
 
