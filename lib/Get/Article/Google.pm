@@ -16,7 +16,7 @@ use Scalar::Util qw(refaddr);
 
 use Data::Dumper;
 
-my $ANY_QUANTITY = qr~(\S+)\s*\d(?>(?:[\d.,] ?)+)?\d?\s*(?(1)|\S+)~;
+my $ANY_QUANTITY = qr/^(\S+)?\s*\d(?>(?:[\d.,] ?)+)?\d?\s*(?(1)|\S+)$/;
 my $NO_GOOGLE    = qr~https://(?!(?>\w+\.)*google\.com)~;
 my $TARGET_LINK  = qr~
    (?|
@@ -31,9 +31,9 @@ my $NESTED_TAGS = qr/^(?:div|p|span)$/;
 my $TEXT_MODIFIERS_TAGS = do {
    local $" = '|';
 
+   #h1 h2 h3 h4 h5 h6 big a
    my @modifiers = qw(
-      h1 h2 h3 h4 h5 h6 big
-      a abbr b bdi bdo cite
+      abbr b bdi bdo big cite
       del dfn em i ins kbd acronym
       data label mark meter tt
       output progress q ruby
@@ -98,13 +98,45 @@ sub prev {
    $index == 0 ? '' : $_[0]->{links}[--$index];
 }
 
+sub _beautify {
+   my $text = "$_[0]" =~ s/^\s+//r =~ s/\s+$//r =~ s/\s{2,}/ /gr;
+   1 == length $text ? '' : $text;
+}
+
+sub _get_text {
+   state ($text, $params);
+
+   no warnings 'recursion';
+   $text = '', $params = [] if defined $_[1];    # top level
+   foreach my $node ($_[0]->child_nodes->each) {
+      if ($node->type eq 'text') {
+         next unless length(my $node_text = _beautify($node->content));
+
+         if    ($node_text =~ /$ANY_QUANTITY/p)                            { push @$params, ${^MATCH} }
+         elsif ($node_text =~ /\.$/ and length($node_text) >= $max_length) { $text .= ($text ? "\n" : '') . $node_text }
+      }
+      elsif (defined($node->tag)) {
+         if    ($node->tag =~ $NESTED_TAGS) { _get_text($node) }
+         elsif ($node->tag =~ $TEXT_MODIFIERS_TAGS) {
+            next unless length(my $node_text = _beautify($node->text));
+            $text .= ($text ? ' ' : '') . $node_text;
+         }
+      }
+   }
+
+   if (defined($_[1]) && length($text) >= $max_length) {
+      local $" = ' ';
+      return "@$params\n$text";
+   }
+}
+
 sub get_contents {
    my $self = shift;
    my $link = $self->{links} && $self->{links}[$index == -1 ? ++$index : $index];
 
    return unless $link;
 
-   #$link = 'https://dir.indiamart.com/impcat/hp-computer-monitor.html';
+   $link = 'https://dir.indiamart.com/impcat/hp-computer-monitor.html';
    my $res = $self->{ua}->get($link)->result;
    return 0 unless $res->is_success;
 
@@ -121,61 +153,4 @@ sub get_contents {
    return $content;
 }
 
-sub _beautify {
-   my $text = "$_[0]" =~ s/^\s+//r =~ s/\s+$//r =~ s/\s{2,}/ /gr;
-   1 == length $text ? '' : $text
-}
-
-sub _get_text {
-   my $parent = $_[0];
-   state($text, $params);
-
-   no warnings 'recursion';
-
-   $text = '', $params = [] if defined $_[1];    # top level
-   foreach my $node ($parent->child_nodes->each) {
-      if ($node->type eq 'text') {
-         next unless length my $node_text = _beautify($_->content);
-
-         if    ($node_text =~ $ANY_QUANTITY)                               { push @$params, ${^MATCH} }
-         elsif ($node_text =~ /\.$/ and length($node_text) => $max_length) { $text .= "\n$node_text" }
-      }
-      elsif (defined($_->tag)) {
-         if    ($_->tag =~ $NESTED_TAGS) { _get_text($_) }
-         elsif ($_->tag =~ $TEXT_MODIFIERS_TAGS) {
-            next unless length my $node_text = _beautify($_->all_text);
-            $text .= "\n" if $_->tag =~ /^h{1,6}$/;
-            $text .= $node_text;
-         }
-      }
-   }
-
-   if (defined($_[1]) && length($text) >= $max_length) {
-      local $" = ' ';
-      return "@$params\n$text";
-   }
-}
-
-sub _lget_text {
-   my $node = shift;
-
-   my $get_text = sub {
-      $_->type eq 'text'
-        ? $_->content
-        : defined($_->tag) ? (
-                                $_->tag =~ /$TEXT_MODIFIERS_TAGS/ ? $_->all_text
-                              : $_->tag =~ $NESTED_TAGS           ? _get_text($_)
-                              :                                     ''
-                             )
-        : '';
-   };
-
-   no warnings 'recursion';
-   my $text = $node
-     ->child_nodes
-     ->map($get_text)
-     ->compact
-     ->join(' ') =~ s/^\s+//r =~ s/\s+$//r =~ s/\s{2,}/ /gr;    # Beautify!
-
-   return $text;
-}
+1;
