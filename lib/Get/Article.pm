@@ -248,28 +248,45 @@ Search descriptions and prices of an article in contents.
 
     my $a = Get::Article->new('banana', $contents);
 
-    # search article 'banana' in the list of contents in $contents
+    # search article 'banana' in contents found in $contents
     my $found = $a->search_article()
 
-    foreach my $desc (@$found) {
-      say "price: $desc->{price}"
-    }
+=head1 METHODS
 
-=head1 SUBROUTINES/METHODS
+=head2 contents
 
-=head2 function1
+Set content on which the search is going to be performed.
 
-=cut
+   $a->contents(["some text ...", "..."]);
 
-sub function1 {
-}
+=head2 article
 
-=head2 function2
+Set the name of the article to be searched in contents.
 
-=cut
+   $a->article("Hp PrôbOôk 6550b");
 
-sub function2 {
-}
+=head2 search_article
+
+Search article in the contents. it returns an array reference containing
+the result of the search.
+
+   $a->search_article(%options);
+
+=over
+
+=item options
+
+=item return value
+
+=back
+
+=head1 SUBROUTINES
+
+=head2 _nfkd_normalize
+
+=head2 _jaro
+
+=head2 _jaro_winkler
 
 =head1 AUTHOR
 
@@ -277,18 +294,15 @@ Kueppo Tcheukam, C<< <tcheukueppo at tutanota.com> >>
 
 =head1 BUGS
 
-Please report any bugs or feature requests to C<bug-get-price at rt.cpan.org>, or through
-the web interface at L<https://rt.cpan.org/NoAuth/ReportBug.html?Queue=Get-Price>.  I will be notified, and then you'll
+Please report any bugs or feature requests to C<bug-get-article at rt.cpan.org>, or through
+the web interface at L<https://rt.cpan.org/NoAuth/ReportBug.html?Queue=Get-Article>.  I will be notified, and then you'll
 automatically be notified of progress on your bug as I make changes.
-
-
-
 
 =head1 SUPPORT
 
 You can find documentation for this module with the perldoc command.
 
-    perldoc Get::Price
+    perldoc Get::Article
 
 
 You can also look for information at:
@@ -297,7 +311,7 @@ You can also look for information at:
 
 =item * RT: CPAN's request tracker (report bugs here)
 
-L<https://rt.cpan.org/NoAuth/Bugs.html?Dist=Get-Price>
+L<https://rt.cpan.org/NoAuth/Bugs.html?Dist=Get-Article>
 
 =item * CPAN Ratings
 
