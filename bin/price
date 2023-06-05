@@ -230,10 +230,10 @@ price [options] article_name
 
 =head1 DESCRIPTION
 
-price is a tiny utility which searches for descriptions and prices
+C<price> is a tiny utility which searches for descriptions and prices
 of a given article on the internet, for it to work at the very basic
 level, you just need to specify the name of your targeting article at
-the command line interface. price comes with handy options that gives
+the command line interface. C<price> comes with handy options that gives
 you the possibility to tweak its behavoir in cases it yields nothing.
 
 It isn't guaranteed that this program will always yield the expected
@@ -262,19 +262,11 @@ Turn on verbosity.
 
 Donot color text
 
-=item -p, --proxy URL
-
-Connect to proxy at C<URL>.
-
 =item -j, --min-jaro MIN_JARO
 
-price uses the jaro winkler algorithm to match article names.
+C<price> uses the jaro winkler algorithm to match article names.
 this can be useful if there are typos in the article name
 you indicated or on the website. The minimum jaro value is 0.7.
-
-=item -r, --retries NUM
-
-The number of retries if connection fails for whatever reason.
 
 =item --noprice
 
@@ -288,7 +280,42 @@ use C<--currencies> option to list all the possible C<CURRENCY_CODES>.
 
 =item -l, --involve PERCENTAGE
 
-Some text
+It is a percentage which indicates how move involved the name of the
+article is present in the extracted text describing the article.
+
+=item -v, --precision NUM
+
+If the article name is mentioned in text, use this option to specifies
+its precision.
+
+=item -s, --sensitive
+
+Use this to turn on nfkd normalization of unicode string. Take for example
+the string C<héllô>, using this option treats C<héllô> as C<hello>.
+
+=item -p, --proxy URL
+
+Connect to proxy at C<URL>.
+
+=item -w, --number-websites NUM
+
+Restrict the search to only C<NUM> websites.
+
+=item -r, --retries NUM
+
+The number of retries if connection fails for whatever reason.
+
+=item -ct, --con-timeout NUM
+
+Set connection timeout to C<NUM> seconds.
+
+=item -rt, --request-timeout NUM
+
+Set request timeout to C<NUM> seconds.
+
+=item -mr, --max-redirects NUM
+
+Set maximum number of redirections to C<NUM>.
 
 =back
 
