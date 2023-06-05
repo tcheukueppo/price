@@ -104,29 +104,40 @@ sub _beautify {
 }
 
 sub _get_text {
-   state ($text, $params);
+   state(@text, @params);
 
    no warnings 'recursion';
-   $text = '', $params = [] if defined $_[1];    # top level
+   @params = @text = () if defined $_[1];    # top level
+
+   my $last_index = $#text == -1 ? 0 : $#text;
    foreach my $node ($_[0]->child_nodes->each) {
       if ($node->type eq 'text') {
          next unless length(my $node_text = _beautify($node->content));
 
-         if    ($node_text =~ /$ANY_QUANTITY/p)                            { push @$params, ${^MATCH} }
-         elsif ($node_text =~ /\.$/ and length($node_text) >= $max_length) { $text .= ($text ? "\n" : '') . $node_text }
+         if    ($node_text =~ /$ANY_QUANTITY/p) { push @params, ${^MATCH} }
+         elsif ($node_text =~ /\.$/ and length($node_text) >= $max_length) {
+            push @text, $node_text;
+            $last_index = $#text;
+         }
       }
       elsif (defined($node->tag)) {
          if    ($node->tag =~ $NESTED_TAGS) { _get_text($node) }
          elsif ($node->tag =~ $TEXT_MODIFIERS_TAGS) {
             next unless length(my $node_text = _beautify($node->text));
-            $text .= ($text ? ' ' : '') . $node_text;
+            $text[$last_index] .= ($text[$last_index] ? ' ' : '') . $node_text;
          }
       }
    }
 
-   if (defined($_[1]) && length($text) >= $max_length) {
-      local $" = ' ';
-      return "@$params\n$text";
+   if (defined $_[1]) {
+      @text = c(@text)->compact->uniq->each;
+      if (@text) {
+         local $" = " ";
+         my $ret = join "\n", "@params", @text;
+
+         #say $ret;
+         return $ret;
+      }
    }
 }
 
@@ -136,7 +147,6 @@ sub get_contents {
 
    return unless $link;
 
-   $link = 'https://dir.indiamart.com/impcat/hp-computer-monitor.html';
    my $res = $self->{ua}->get($link)->result;
    return 0 unless $res->is_success;
 
@@ -145,8 +155,8 @@ sub get_contents {
    foreach my $node ($res->dom->at('body')->find('div, p')->each) {
       my $text = _get_text($node, 1);
 
-      next unless "$text";
-      push @{$content->{text}}, ref $text ? $text->to_string : $text;
+      next unless defined($text) and "$text";
+      push @{$content->{text}}, $text;
    }
 
    $content->{text} = [c(@{$content->{text}})->uniq->each];

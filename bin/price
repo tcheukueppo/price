@@ -27,7 +27,7 @@ my $options = {
                article => {
                            jaro       => 0.8,
                            token_dist => 3,
-                           token_perc => 80,
+                           token_perc => 30,
                            nfkd       => 1,
                            price      => 1,
                           },
@@ -86,12 +86,13 @@ sub currency {
 
 GetOptions(
            'p|proxy=s'           => \&proxy,
-           'j|min-jaro=i'        => \&jaro,
+           'j|min-jaro=f'        => \&jaro,
            'h|help'              => \&pod2usage,
            'r|retries=i'         => \$options->{others}{retries},
            'sq|sql-insert=s'     => \$options->{others}{sql},
            'price!'              => \$options->{article}{price},
            'v|precision=i'       => \$options->{article}{token_dist},
+           'l|involve=i'         => \$options->{article}{token_perc},
            's|sensitive'         => \$options->{article}{nfkd},
            'i|in=s'              => \&currency,
            'verbose'             => \$options->{others}{verbose},
