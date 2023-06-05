@@ -230,11 +230,67 @@ price [options] article_name
 
 =head1 DESCRIPTION
 
-description here
+price is a tiny utility which searches for descriptions and prices
+of a given article on the internet, for it to work at the very basic
+level, you just need to specify the name of your targeting article at
+the command line interface. price comes with handy options that gives
+you the possibility to tweak its behavoir in cases it yields nothing.
+
+It isn't guaranteed that this program will always yield the expected
+result, it might in some cases yield nothing at all and that is why
+these options exists; for you to tweak and obtain atleast something
+useful.
+
+In regards to the article name, the more details you give, the higher
+the probability it yields something useful but note that is is not always
+true because some sites presents their content is a very wierd format.
+Overall, just tweak again and again before giving up.
 
 =head1 OPTIONS
 
-options doc here
+=over 4
+
+=item -h, --help
+
+Display this help message and exit.
+
+=item --verbose
+
+Turn on verbosity.
+
+=item --nocolor
+
+Donot color text
+
+=item -p, --proxy URL
+
+Connect to proxy at C<URL>.
+
+=item -j, --min-jaro MIN_JARO
+
+price uses the jaro winkler algorithm to match article names.
+this can be useful if there are typos in the article name
+you indicated or on the website. The minimum jaro value is 0.7.
+
+=item -r, --retries NUM
+
+The number of retries if connection fails for whatever reason.
+
+=item --noprice
+
+Donot try to detect prices of the article you are searching, just
+fetch descriptions.
+
+=item -i, --in CURRENCY_CODE
+
+If you detect any price, convert it into the indicated currency,
+use C<--currencies> option to list all the possible C<CURRENCY_CODES>.
+
+=item -l, --involve PERCENTAGE
+
+Some text
+
+=back
 
 =head1 BUGS
 
