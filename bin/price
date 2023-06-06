@@ -162,13 +162,13 @@ ARTICLE: foreach my $article (@ARGV) {
       }
 
       my $lang = $contents->{lang};
-      $art->contents($contents->{text});
+      $art->contents($contents->{extracted});
       $contents = $art->search_article(%{$options->{article}});
 
       next unless defined $contents;
       my $desc = (
                   sort { $a->[0] <=> $b->[0] || $b->[1]{jaro} <=> $a->[1]{jaro} || $b->[1]{score} <=> $a->[1]{score} }
-                  map  { [length($_->{short}), $_] } @$contents
+                  map  { [length($_->{description}), $_] } @$contents
                  )[0][1];
 
       if ($options->{article}{price}) {
@@ -205,13 +205,11 @@ ARTICLE: foreach my $article (@ARGV) {
       }
 
       if ($options->{others}{sql}) {
-         say "INSERT INTO $options->{others}{sql} () VALUES ()";
+         say qq{INSERT INTO $options->{others}{sql} (name, description) VALUES ("$article", "$desc->{description}")};
       }
       else {
-         say color_this("Short Description");
-         say $desc->{short};
-         say color_this("Long Description");
-         say $desc->{long};
+         say color_this("Description");
+         say $desc->{description};
          say color_this("Price: "), $desc->{price}[2] ? @{$desc->{price}}[1,0] : @{$desc->{price}}[0,1]
            if $options->{article}{price};
       }

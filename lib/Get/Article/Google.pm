@@ -114,8 +114,8 @@ sub _get_text {
       if ($node->type eq 'text') {
          next unless length(my $node_text = _beautify($node->content));
 
-         if    ($node_text =~ /$ANY_QUANTITY/p) { push @params, ${^MATCH} }
-         elsif ($node_text =~ /\.$/ and length($node_text) >= $max_length) {
+         if ($node_text =~ /$ANY_QUANTITY/p) { push @params, ${^MATCH} }
+         if ($node_text =~ /\.$/ and length($node_text) >= $max_length) {
             push @text, $node_text;
             $last_index = $#text;
          }
@@ -130,14 +130,15 @@ sub _get_text {
    }
 
    if (defined $_[1]) {
-      @text = c(@text)->compact->uniq->each;
-      if (@text) {
-         local $" = " ";
-         my $ret = join "\n", "@params", @text;
+      local $" = "\n";
 
-         #say $ret;
-         return $ret;
-      }
+      @text = c(@text)->compact->uniq->each;
+      return @text
+        ? {
+           extracted => "@text",
+           numeric   => [@params],
+          }
+        : undef;
    }
 }
 
@@ -153,13 +154,13 @@ sub get_contents {
    my $content;
    $content->{lang} = $res->dom->at('html')->attr('lang') // 'en';
    foreach my $node ($res->dom->at('body')->find('div, p')->each) {
-      my $text = _get_text($node, 1);
+      my $got = _get_text($node, 1);
 
-      next unless defined($text) and "$text";
-      push @{$content->{text}}, $text;
+      next unless defined $got;
+      push @{$content->{extracted}}, $got;
    }
 
-   $content->{text} = [c(@{$content->{text}})->uniq->each];
+   $content->{extracted} = [c(@{$content->{extracted}})->uniq->each];
    return $content;
 }
 

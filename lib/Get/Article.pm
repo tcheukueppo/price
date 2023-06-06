@@ -159,14 +159,18 @@ sub search_article {
    my @tokens = grep { length } split /\s+/, fc $self->{article}{name};
 
    @tokens = map { _nfkd_normalize($_) } @tokens if $configs->{nfkd};
-   foreach my $paragraph (@{$self->{content}}) {
+   foreach my $content (@{$self->{content}}) {
+      #say Dumper $content;
       my (@description, $price);
 
       if ($configs->{price}) {
-         next unless defined($price = _get_price($paragraph));
+         my @prices = grep { defined } map { _get_price($_) } @{$content->{numeric}} if @{$content->{numeric}};
+         $price = (sort { $b->[0] <=> $a->[0] } @prices)[0] if @prices;
+         #say $price if defined $price;
+         next unless defined($price //= _get_price($content->{extracted}));
       }
 
-      while ($paragraph =~ /\G\s*(.+?\b{wb}(?:[.?!]+|(?=\s*\z))\b{wb})\s*/g) {
+      while ($content->{extracted} =~ /\G\s*(.+?\b{wb}(?:[.?!]+|(?=\s*\z))\b{wb})\s*/g) {
          my $sentence = $1;
          my $gaps     = 0;
          my (%passed, %param);
@@ -221,9 +225,11 @@ sub search_article {
       }
 
       if (@description) {
-         $found->[$index]         = (sort { $b->{score} <=> $a->{score} || $b->{jaro} <=> $a->{jaro} } @description)[0];
-         $found->[$index]{price}  = _get_price($found->[$index]{short}) // $price;
-         $found->[$index++]{long} = $paragraph;
+         my $valid_des = (sort { $b->{score} <=> $a->{score} || $b->{jaro} <=> $a->{jaro} } @description)[0];
+
+         $found->[$index] = {%{$valid_des}{qw(jaro score)}};
+         $found->[$index]{price} = _get_price($valid_des->{short}) // $price if $configs->{price};
+         $found->[$index++]{description} = $content->{extracted};
       }
    }
 
