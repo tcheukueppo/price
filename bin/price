@@ -20,6 +20,7 @@ use Get::Article::Google;
 
 use Mojo::UserAgent;
 
+$| = 1;
 # Debug
 use Data::Dumper;
 

@@ -16,14 +16,15 @@ use Scalar::Util qw(refaddr);
 
 use Data::Dumper;
 
+my $FILTER_LINK  = qr/(?<!\.(?:pdf|doc|jpg|png))$/;
 my $ANY_QUANTITY = qr/^(\S+)?\s*\d(?>(?:[\d.,] ?)+)?\d?\s*(?(1)|\S+)$/;
 my $NO_GOOGLE    = qr~https://(?!(?>\w+\.)*google\.com)~;
-my $TARGET_LINK  = qr~
+my $TARGET_LINK  = qr/
    (?|
       imgrefurl = ((?> [^&]+ ))
     | (?:q|u)   = ( $NO_GOOGLE (?>[^&]+) )
    )
-~x;
+/x;
 
 my $NESTED_TAGS = qr/^(?:div|p|span)$/;
 
@@ -31,7 +32,7 @@ my $NESTED_TAGS = qr/^(?:div|p|span)$/;
 my $TEXT_MODIFIERS_TAGS = do {
    local $" = '|';
 
-   #h1 h2 h3 h4 h5 h6 big a
+   #h1 h2 h3 h4 h5 h6 a
    my @modifiers = qw(
       abbr b bdi bdo big cite
       del dfn em i ins kbd acronym
@@ -65,7 +66,7 @@ sub google {
    return unless $article;
 
    $n //= 100;
-   $self->{url}->query(q => "price of $article");
+   $self->{url}->query(q => "$article");
 
    my $tx = $self->{ua}->get("$self->{url}");
    return 0 if !$tx->result->is_success;
@@ -80,6 +81,7 @@ sub google {
      ->map(sub { Mojo::URL->new($_)->query })
      ->compact
      ->map(sub { /$TARGET_LINK/ ? $1 : '' })
+     ->grep($FILTER_LINK)
      ->compact
      ->uniq
      ->shuffle
@@ -99,7 +101,9 @@ sub prev {
 }
 
 sub _beautify {
-   my $text = "$_[0]" =~ s/^\s+//r =~ s/\s+$//r =~ s/\s{2,}/ /gr;
+   my $text = ref $_[0] ? shift()->to_string : shift;
+
+   $text = $text =~ s/^\s+//r =~ s/\s+$//r =~ s/\s{2,}/ /gr;
    1 == length $text ? '' : $text;
 }
 
