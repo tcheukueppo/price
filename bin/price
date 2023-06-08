@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 use utf8;
-use feature qw(say);
+use feature qw(say state);
 
 no warnings 'utf8';
 
@@ -21,6 +21,7 @@ use Get::Article::Google;
 use Mojo::UserAgent;
 
 $| = 1;
+
 # Debug
 use Data::Dumper;
 
@@ -43,9 +44,9 @@ my $options = {
                           currency   => '',
                          },
                mojo_ua => {
-                           proxy           => '',
+                           proxies         => '',
                            connect_timeout => 10,
-                           max_redirects   => 0,
+                           max_redirects   => 2,
                            request_timeout => 0,
                           },
               };
@@ -53,7 +54,7 @@ my $options = {
 my $warn = sub {
    my $string = $_[0];
 
-   $string =~ s/(?::.+)?\s*at.+//s;
+   $string =~ s{at lib/.+$}{}s;
    $string = colored("$string, retrying...", 'red') if $options->{others}{color};
    warn "$string\n";
 };
@@ -70,11 +71,6 @@ sub color_this {
    return $string;
 }
 
-sub proxy {
-   $_[1] =~ m{^socks://[^:]+(?::\d+)?$} or $die->('invalid proxy url');
-   $options->{mojo_ua}{proxy} = $_[1];
-}
-
 sub jaro {
    0.7 < $_[1] <= 1 or $die->('min jaro: 0.7, max jaro: 1');
    $options->{article}{jaro} = $_[1];
@@ -85,8 +81,10 @@ sub currency {
    $options->{others}{currency} = uc $_[1];
 }
 
+my $proxies;
+
 GetOptions(
-           'p|proxy=s'           => \&proxy,
+           'p|proxies=s%'        => \$proxies,
            'j|min-jaro=f'        => \&jaro,
            'h|help'              => \&pod2usage,
            'r|retries=i'         => \$options->{others}{retries},
@@ -110,6 +108,18 @@ GetOptions(
 $options->{others}{help} and pod2usage(1);
 @ARGV or $die->('please specify an article name');
 
+my ($proxy_list, $gen_proxy);
+if (defined $proxies) {
+   $die->("unknown proxy type '$_'") foreach grep { !/^(?:https?|socks)$/ } keys %$proxies;
+
+   push @$proxy_list, map {
+      my $type = $_;
+      map "$type://$_", grep { length } split /,/, $proxies->{$_}
+   } keys %$proxies;
+
+   $gen_proxy = $proxies && sub { state $seed = 0; srand $seed++; return $proxy_list->[rand(@$proxy_list * 2) % $#$proxy_list] };
+}
+
 # langauges using `.' as radix character
 my $lang_re = do {
    local $" = '|';
@@ -127,18 +137,18 @@ my $lang_re = do {
    qr{^(?:@dot)$};
 };
 
-my $ua     = Mojo::UserAgent->new;
-my $google = Get::Article::Google->new($ua);
-my $art    = Get::Article->new;
+my $ua        = Mojo::UserAgent->new;
+my $google    = Get::Article::Google->new($ua, $gen_proxy);
+my $art       = Get::Article->new;
 
-length $options->{mojo_ua}{$_} and $ua->$_($options->{mojo_ua}{$_}) foreach keys %{$options->{mojo_ua}};
 $options->{others}{retries} = 3 if $options->{others}{retries} < 0;
+length $options->{mojo_ua}{$_} and $ua->$_($options->{mojo_ua}{$_}) foreach keys %{$options->{mojo_ua}};
 
 ARTICLE: foreach my $article (@ARGV) {
    my $tries = -1;
 
    $art->article($article);
-   say color_this("[article]:") . " working on '$article'" if $options->{others}{verbose};
+   say STDERR color_this("[article]:") . " working on '$article'" if $options->{others}{verbose};
 
    while () {
       my $status = 0;
@@ -154,7 +164,7 @@ ARTICLE: foreach my $article (@ARGV) {
  LINK: while (my $link = $google->next) {
       my $contents;
 
-      say color_this('[website]: ') . $link if $options->{others}{verbose};
+      say STDERR color_this('[website]: ') . $link if $options->{others}{verbose};
       while () {
          eval { $contents = $google->get_contents };
          $contents ? last : next LINK unless $@;
@@ -188,11 +198,11 @@ ARTICLE: foreach my $article (@ARGV) {
             }
 
             if (defined($from) && $from ne $options->{others}{currency}) {
-               say color_this("[currency]: ") . "from '$desc->{price}[1]' to '$options->{others}{currency}'"
+               say STDERR color_this("[currency]: ") . "from '$desc->{price}[1]' to '$options->{others}{currency}'"
                  if $options->{others}{verbose};
 
                my $price;
-               my $exchange = Get::Article::Exchange->new($ua);
+               my $exchange = Get::Article::Exchange->new($ua, $gen_proxy);
                while () {
                   eval { $price = $exchange->convert($desc->{price}->[0], $from, $options->{others}{currency}) };
                   last unless $@;
@@ -211,7 +221,7 @@ ARTICLE: foreach my $article (@ARGV) {
       else {
          say color_this("Description");
          say $desc->{description};
-         say color_this("Price: "), $desc->{price}[2] ? @{$desc->{price}}[1,0] : @{$desc->{price}}[0,1]
+         say color_this("Price: "), $desc->{price}[2] ? @{$desc->{price}}[1, 0] : @{$desc->{price}}[0, 1]
            if $options->{article}{price};
       }
    }

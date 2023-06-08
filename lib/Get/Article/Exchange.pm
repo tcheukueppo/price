@@ -23,10 +23,18 @@ sub new {
      ->path('/cc-api/currencies');
 
    bless {
-          ua  => $_[1] // Mojo::UserAgent->new,
-          url => $url,
+          proxy => $_[2],
+          ua    => $_[1] // Mojo::UserAgent->new,
+          url   => $url,
          },
      $_[0];
+}
+
+sub get {
+   my $self = shift;
+
+   $self->{ua}->proxy->http($self->{proxy}->()) if $self->{proxy};
+   return $self->{ua}->get("$self->{url}");
 }
 
 sub convert {
@@ -50,7 +58,7 @@ sub convert {
                        )->ymd,
                       );
 
-   my $res = $self->{ua}->get("$self->{url}")->result;
+   my $res = $self->get("$self->{url}")->result;
 
    return sprintf '%.2f', $amount * $res->json->{response}[0]{average_bid} if $res->is_success and !exists $res->json->{error};
    return -1;

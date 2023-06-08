@@ -45,18 +45,26 @@ my $TEXT_MODIFIERS_TAGS = do {
    qr/^(?:@modifiers)$/;
 };
 
-my ($index, $max_length) = (-1, 50);
+my ($index, $max_length) = (-1, 100);
 
 sub new {
    bless {
-          ua  => $_[1] // Mojo::UserAgent->new(),
-          url => Mojo::URL
+          proxy => $_[2],
+          ua    => $_[1] // Mojo::UserAgent->new,
+          url   => Mojo::URL
           ->new
           ->scheme('https')
           ->host('www.google.com')
           ->path('/search')
          },
      $_[0];
+}
+
+sub get {
+   my $self = shift;
+
+   $self->{ua}->proxy->http($self->{proxy}->()) if $self->{proxy};
+   return $self->{ua}->get("$self->{url}");
 }
 
 # google and save results
@@ -66,9 +74,9 @@ sub google {
    return unless $article;
 
    $n //= 100;
-   $self->{url}->query(q => "$article");
+   $self->{url}->query(q => "what is the game $article");
 
-   my $tx = $self->{ua}->get("$self->{url}");
+   my $tx = $self->get("$self->{url}");
    return 0 if !$tx->result->is_success;
 
    my $c = $tx
@@ -84,7 +92,6 @@ sub google {
      ->grep($FILTER_LINK)
      ->compact
      ->uniq
-     ->shuffle
      ->head($n);
 
    $index = -1;
@@ -152,7 +159,7 @@ sub get_contents {
 
    return unless $link;
 
-   my $res = $self->{ua}->get($link)->result;
+   my $res = $self->get($link)->result;
    return 0 unless $res->is_success;
 
    my $content;
